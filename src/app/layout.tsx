@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AI Job Agent",
-  description: "AI Job Agent",
+  title: "AI Career Copilot",
+  description: "Your AI-Powered Career Growth Platform",
 };
 
 export default function RootLayout({

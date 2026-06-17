@@ -5,11 +5,11 @@ export default function HomePage() {
     <main className="min-h-screen bg-black text-white flex flex-col items-center justify-center gap-6">
 
       <h1 className="text-5xl font-bold">
-        AI Job Agent
+        AI Career Copilot
       </h1>
 
       <p className="text-neutral-400 text-lg">
-        Find jobs smarter with AI
+        Your AI-Powered Career Growth Platform
       </p>
 
       <Link

@@ -19,7 +19,7 @@ async function handleLogout() {
     <nav className="w-full h-16 bg-neutral-900 text-white flex items-center justify-between px-6 border-b border-neutral-800">
       
       <h1 className="text-xl font-bold">
-        AI Job Agent
+        AI Career Copilot
       </h1>
 
       <div className="flex items-center gap-4">
