@@ -1,56 +1,31 @@
-import Navbar from "@/components/Navbar"
-import ResumeUpload from "@/components/ResumeUpload"
-import AnalyticsCard from "@/components/AnalyticsCard"
-import Suggestions from "@/components/Suggestions"
-import MatchCard from "@/components/MatchCard"
+import { redirect } from "next/navigation"
+import { getCurrentUser } from "@/backend/auth/session"
+import { getDashboardData } from "@/backend/services/dashboardService"
+import DashboardContainer from "@/components/DashboardContainer"
 
-export default function DashboardPage() {
-  return (
-    <main className="min-h-screen bg-black text-white">
+export default async function DashboardPage() {
+  const user = await getCurrentUser()
 
-      <Navbar />
+  if (!user) {
+    redirect("/auth")
+  }
 
-      <div className="p-6 flex flex-col gap-6">
+  let dashboardData
+  try {
+    dashboardData = await getDashboardData(user.id)
+  } catch {
+    dashboardData = {
+      atsScoreValue: "Unavailable",
+      atsScoreSubtitle: "Unable to load dashboard records",
+      matchedJobsCount: 0,
+      applicationsCount: 0,
+      savedJobsCount: 0,
+      applicationsSubtitle: "Unable to load application records",
+      suggestions: [],
+      targetRole: null,
+      matchedJobs: []
+    }
+  }
 
-        <ResumeUpload />
-
-        <div className="grid grid-cols-3 gap-6">
-
-          <AnalyticsCard
-            title="ATS Score"
-            value="87%"
-          />
-
-          <AnalyticsCard
-            title="Matched Jobs"
-            value="24"
-          />
-
-          <AnalyticsCard
-            title="Applications"
-            value="12"
-          />
-
-        </div>
-
-        <Suggestions />
-
-        <div className="grid grid-cols-2 gap-6">
-
-          <MatchCard
-            company="Google"
-            role="Frontend Developer"
-          />
-
-          <MatchCard
-            company="Microsoft"
-            role="React Engineer"
-          />
-
-        </div>
-
-      </div>
-
-    </main>
-  )
+  return <DashboardContainer user={user} dashboardData={dashboardData} />
 }

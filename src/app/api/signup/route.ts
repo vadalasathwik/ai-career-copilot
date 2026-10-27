@@ -1,36 +1,37 @@
 import { NextRequest, NextResponse } from "next/server"
+import { signupService } from "@/backend/services/signupService"
+import { generateToken } from "@/backend/auth/jwt"
 
-import { signupService } from "../../../backend/services/signupService"
-export async function POST(
-  request: NextRequest
-) {
-
+export async function POST(request: NextRequest) {
   try {
-
-    console.log("API HIT")
-
     const body = await request.json()
-
-    console.log("BODY:", body)
-
     const user = await signupService(body)
+    const token = generateToken(user.id)
 
-    console.log("USER CREATED:", user)
-
-    return NextResponse.json(
+    const response = NextResponse.json(
       {
         success: true,
-        user
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          image: user.image,
+          provider: user.provider
+        }
       },
-      {
-        status: 201
-      }
+      { status: 201 }
     )
 
+    response.cookies.set("token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7
+    })
+
+    return response
   } catch (error) {
-
-    console.error("SIGNUP ERROR:", error)
-
     return NextResponse.json(
       {
         success: false,
@@ -39,11 +40,7 @@ export async function POST(
             ? error.message
             : "Something went wrong"
       },
-      {
-        status: 400
-      }
+      { status: 400 }
     )
-
   }
-
 }

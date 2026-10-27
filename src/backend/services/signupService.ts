@@ -19,6 +19,9 @@ export async function signupService(data: SignupInput) {
   )
 
   if (existingUser) {
+    if (existingUser.provider === "google" && !existingUser.password) {
+      throw new Error("An account with this email already exists via Google Sign-In. Please sign in with Google.")
+    }
     throw new Error("Email already exists")
   }
 
