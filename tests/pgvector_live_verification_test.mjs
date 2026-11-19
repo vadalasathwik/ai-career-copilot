@@ -9,7 +9,7 @@ const CASES = [
   ["TypeScript", "Built TypeScript services.", true, "positive"], ["Docker", "Automated deployments with Docker.", true, "positive"], ["K8s", "Operated Kubernetes clusters.", true, "positive"], ["container orchestration", "Operated Kubernetes clusters.", true, "positive"], ["relational database", "Designed PostgreSQL schemas.", true, "positive"], ["relational database", "Maintained MySQL data stores.", true, "positive"], ["automated deployment", "Implemented CI/CD pipelines.", true, "positive"], ["React", "Built React dashboards.", true, "positive"], ["Node.js", "Maintained Node.js APIs.", true, "positive"], ["Python", "Automated reports with Python.", true, "positive"],
   ["Java", "Maintained JavaScript interfaces.", false, "gaps"], ["PostgreSQL", "Maintained MySQL data stores.", false, "gaps"], ["Kubernetes", "Coordinated generic orchestration work.", false, "gaps"], ["TypeScript and React", "Built TypeScript services.", false, "gaps"], ["Docker and Kubernetes", "Automated deployments with Docker.", false, "gaps"], ["AWS", "Deployed services on Azure.", false, "gaps"],
   ["event streaming platform", "Built Kafka event pipelines.", true, "heldPositive"], ["distributed cache", "Improved Redis caching.", true, "heldPositive"], ["Kubernetes production", "Operated Kubernetes clusters.", false, "heldGaps"], ["PostgreSQL performance", "Designed PostgreSQL schemas.", false, "heldGaps"]
-].map(([requirement, target, expected, group]) => ({ requirement, target, expected, group }))
+].map(([requirement, target, expected, group]) => ({ requirement, target, expected, group, acceptableExcerpts: expected ? [target] : [] }))
 
 function distractors(group) {
   return [`Prepared project documentation and status updates for ${group}.`, `Collaborated with stakeholders on planning and delivery for ${group}.`, `Improved monitoring dashboards and operational reporting for ${group}.`, `Supported customer onboarding and training materials for ${group}.`]
@@ -20,8 +20,8 @@ function metrics(results, method) {
   const gaps = results.filter((result) => !result.expected)
   return {
     candidateRecallAt3: `${positives.filter((result) => result[method].inTop3).length}/${positives.length}`,
-    acceptedCitationRecall: `${positives.filter((result) => result[method].accepted).length}/${positives.length}`,
-    falsePositiveRate: `${gaps.filter((result) => result[method].accepted).length}/${gaps.length}`
+    acceptedCitationRecall: `${positives.filter((result) => result.acceptableExcerpts.includes(result[method].selectedExcerpt)).length}/${positives.length}`,
+    falsePositiveRate: `${gaps.filter((result) => result[method].selectedExcerpt !== null).length}/${gaps.length}`
   }
 }
 
@@ -57,11 +57,18 @@ async function run() {
       const question = createInterviewPracticeQuestions(requirements[index], resume.extractedText)[0]
       const rules = ruleBasedCandidates(question.jobRequirement, excerpts)
       const vectorQuestion = applyVectorEvidence(question, candidates)
-      results.push({ ...testCase, keyword: { inTop3: rules.keyword.includes(testCase.target), accepted: rules.keyword.includes(testCase.target) }, synonym: { inTop3: rules.synonym.includes(testCase.target), accepted: rules.synonym.includes(testCase.target) }, vector: { inTop3: candidates.some((candidate) => candidate.text === testCase.target), accepted: vectorQuestion.evidenceMethod === "vector" } })
+      const combinedCandidates = Array.from(new Set([...rules.synonym, ...rules.keyword])).slice(0, 3)
+      results.push({
+        ...testCase,
+        keyword: { inTop3: rules.keyword.includes(testCase.target), selectedExcerpt: rules.keyword[0] ?? null },
+        synonym: { inTop3: rules.synonym.includes(testCase.target), selectedExcerpt: rules.synonym[0] ?? null },
+        combined: { inTop3: combinedCandidates.includes(testCase.target), selectedExcerpt: question.resumeExcerpt },
+        vector: { inTop3: candidates.some((candidate) => candidate.text === testCase.target), selectedExcerpt: vectorQuestion.evidenceMethod === "vector" ? vectorQuestion.resumeExcerpt : null }
+      })
     }
     const development = results.slice(0, 16)
     const heldOut = results.slice(16)
-    for (const method of ["keyword", "synonym", "vector"]) {
+    for (const method of ["keyword", "synonym", "combined", "vector"]) {
       assert.equal(metrics(development, method).falsePositiveRate, "0/6")
       assert.equal(metrics(heldOut, method).falsePositiveRate, "0/2")
     }
@@ -80,7 +87,8 @@ async function run() {
     const fallback = await ensureResumeEvidenceIndex(groups.get("gaps").resume.id, "Synthetic provider fallback chunk.")
     process.env.GEMINI_API_KEY = originalKey
     assert.equal(fallback.reason, "EMBEDDING_UNAVAILABLE")
-    console.log(JSON.stringify({ development: Object.fromEntries(["keyword", "synonym", "vector"].map((method) => [method, metrics(development, method)])), heldOut: Object.fromEntries(["keyword", "synonym", "vector"].map((method) => [method, metrics(heldOut, method)])), kafka: results[16].vector, redis: results[17].vector, cutoff: VECTOR_EVIDENCE_MIN_SIMILARITY }, null, 2))
+    const methods = ["keyword", "synonym", "combined", "vector"]
+    console.log(JSON.stringify({ development: Object.fromEntries(methods.map((method) => [method, metrics(development, method)])), heldOut: Object.fromEntries(methods.map((method) => [method, metrics(heldOut, method)])), kafka: results[16].vector, redis: results[17].vector, cutoff: VECTOR_EVIDENCE_MIN_SIMILARITY }, null, 2))
   } finally {
     await client.end().catch(() => undefined)
     if (user) await prisma.user.delete({ where: { id: user.id } })
