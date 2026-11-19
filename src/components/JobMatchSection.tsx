@@ -19,6 +19,7 @@ interface InterviewPracticeQuestion {
   resumeExcerpt: string | null
   evidenceStatus: "evidence" | "gap"
   evidenceMethod: "vector" | "semantic" | "keyword" | "none"
+  questionGeneration: "gemini" | "template"
   gapExplanation?: string
 }
 
@@ -31,6 +32,7 @@ interface CompletedMatch {
 function InterviewPrep({ resumeId, jobDescription }: { resumeId: number; jobDescription: string }) {
   const [questions, setQuestions] = useState<InterviewPracticeQuestion[] | null>(null)
   const [keywordFallbackUsed, setKeywordFallbackUsed] = useState(false)
+  const [questionGenerationFallbackUsed, setQuestionGenerationFallbackUsed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const requestId = useRef(0)
@@ -47,6 +49,7 @@ function InterviewPrep({ resumeId, jobDescription }: { resumeId: number; jobDesc
     setError(null)
     setQuestions(null)
     setKeywordFallbackUsed(false)
+    setQuestionGenerationFallbackUsed(false)
 
     try {
       const response = await fetch("/api/interview-prep", {
@@ -60,6 +63,7 @@ function InterviewPrep({ resumeId, jobDescription }: { resumeId: number; jobDesc
       if (!response.ok || !data.success) throw new Error(data.message || "Could not generate practice questions.")
       setQuestions(Array.isArray(data.questions) ? data.questions : [])
       setKeywordFallbackUsed(Boolean(data.retrieval?.keywordFallbackUsed))
+      setQuestionGenerationFallbackUsed(Boolean(data.retrieval?.questionGenerationFallbackUsed))
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === "AbortError") return
       if (id === requestId.current) setError(err instanceof Error ? err.message : "Could not generate practice questions.")
@@ -82,6 +86,7 @@ function InterviewPrep({ resumeId, jobDescription }: { resumeId: number; jobDesc
       {error && <div className="bg-rose-950/80 border border-rose-800 text-rose-300 text-xs p-3 rounded-xl flex items-center justify-between gap-3"><span>⚠️ {error}</span><button type="button" onClick={generate} className="underline font-semibold">Retry</button></div>}
       {questions && <>
         {keywordFallbackUsed && <p className="text-[11px] text-indigo-200 bg-indigo-950/40 border border-indigo-900/70 rounded-lg px-3 py-2">Some evidence uses exact keyword retrieval because no semantic paraphrase was available.</p>}
+        {questionGenerationFallbackUsed && <p className="text-[11px] text-amber-200 bg-amber-950/30 border border-amber-900/70 rounded-lg px-3 py-2">Some questions use the reliable practice template because Gemini generation was unavailable or could not validate a citation.</p>}
         <ol className="flex flex-col gap-3">
           {questions.map((item, index) => <li key={`${item.jobRequirement}-${index}`} className="border border-neutral-800 rounded-xl p-3.5 text-xs break-words">
             <div className="flex items-start gap-2">

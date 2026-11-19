@@ -17,6 +17,11 @@ async function runInterviewPrepTests() {
     otherUser = await prisma.user.create({ data: { name: "Interview Other", email: `interview_other_${suffix}@example.com`, provider: "local" } })
     const ownerToken = generateToken(owner.id)
     const otherToken = generateToken(otherUser.id)
+    const runPrep = (resumeId, jobDescription, scenario = "true") => fetch(`${BASE_URL}/api/interview-prep`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: `token=${ownerToken}`, "x-test-mock-interview": scenario },
+      body: JSON.stringify({ resumeId, jobDescription })
+    })
     evidenceResume = await prisma.resume.create({
       data: {
         userId: owner.id, fileName: "evidence.pdf", fileSize: 1, fileType: "application/pdf", filePath: "/tmp/evidence.pdf",
@@ -41,12 +46,13 @@ async function runInterviewPrepTests() {
     const missingText = await fetch(`${BASE_URL}/api/interview-prep`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: `token=${ownerToken}` }, body: JSON.stringify({ resumeId: emptyResume.id, jobDescription: description }) })
     assert.equal(missingText.status, 400)
 
-    const matched = await fetch(`${BASE_URL}/api/interview-prep`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: `token=${ownerToken}` }, body: JSON.stringify({ resumeId: evidenceResume.id, jobDescription: description }) })
+    const matched = await runPrep(evidenceResume.id, description)
     assert.equal(matched.status, 200)
     const data = await matched.json()
     assert.equal(data.success, true)
     assert.equal(data.retrieval.vectorAvailable, false, "Development fallback must be used when pgvector is unavailable")
     assert.equal(data.retrieval.vectorFallbackReason, "PGVECTOR_UNAVAILABLE")
+    assert.equal(data.questions[0].questionGeneration, "gemini")
     assert.ok(data.questions.length <= 5)
     const evidence = data.questions.find((question) => question.evidenceStatus === "evidence")
     const gap = data.questions.find((question) => question.evidenceStatus === "gap" && question.jobRequirement.includes("Kubernetes"))
@@ -57,43 +63,63 @@ async function runInterviewPrepTests() {
     assert.ok(gap, "Expected a partially matched requirement to be a practice gap")
     assert.equal(gap.resumeExcerpt, null)
 
-    const javaOnly = await fetch(`${BASE_URL}/api/interview-prep`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: `token=${ownerToken}` }, body: JSON.stringify({ resumeId: evidenceResume.id, jobDescription: "Required Java experience for your role." }) })
+    const javaOnly = await runPrep(evidenceResume.id, "Required Java experience for your role.")
     assert.equal(javaOnly.status, 200)
     const javaData = await javaOnly.json()
     assert.equal(javaData.questions[0].evidenceStatus, "gap", "JavaScript must not count as evidence for Java")
     assert.equal(javaData.questions[0].resumeExcerpt, null)
 
-    const dockerPunctuation = await fetch(`${BASE_URL}/api/interview-prep`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: `token=${ownerToken}` }, body: JSON.stringify({ resumeId: evidenceResume.id, jobDescription: "Required: Docker. Please prepare for your role." }) })
+    const dockerPunctuation = await runPrep(evidenceResume.id, "Required: Docker. Please prepare for your role.")
     assert.equal(dockerPunctuation.status, 200)
     const dockerData = await dockerPunctuation.json()
     assert.equal(dockerData.questions[0].evidenceStatus, "evidence", "Terminal punctuation must not prevent Docker evidence retrieval")
     assert.equal(dockerData.questions[0].resumeExcerpt, "Led Docker deployment automation.")
 
-    const semantic = await fetch(`${BASE_URL}/api/interview-prep`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: `token=${ownerToken}` }, body: JSON.stringify({ resumeId: evidenceResume.id, jobDescription: "Required: container orchestration experience for your role." }) })
+    const semantic = await runPrep(evidenceResume.id, "Required: container orchestration experience for your role.")
     assert.equal(semantic.status, 200)
     const semanticData = await semantic.json()
     assert.equal(semanticData.questions[0].evidenceMethod, "semantic", "Kubernetes must support the container-orchestration paraphrase")
     assert.equal(semanticData.questions[0].resumeExcerpt, "Operated Kubernetes clusters for production workloads.")
     assert.equal(semanticData.retrieval.keywordFallbackUsed, false)
 
-    const alias = await fetch(`${BASE_URL}/api/interview-prep`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: `token=${ownerToken}` }, body: JSON.stringify({ resumeId: evidenceResume.id, jobDescription: "Required: K8s experience for your role." }) })
+    const alias = await runPrep(evidenceResume.id, "Required: K8s experience for your role.")
     const aliasData = await alias.json()
     assert.equal(alias.status, 200)
     assert.equal(aliasData.questions[0].evidenceMethod, "semantic", "K8s and Kubernetes must remain explicit aliases")
     assert.equal(aliasData.questions[0].resumeExcerpt, "Operated Kubernetes clusters for production workloads.")
 
-    const relational = await fetch(`${BASE_URL}/api/interview-prep`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: `token=${ownerToken}` }, body: JSON.stringify({ resumeId: evidenceResume.id, jobDescription: "Required: relational database experience for your role." }) })
+    const relational = await runPrep(evidenceResume.id, "Required: relational database experience for your role.")
     const relationalData = await relational.json()
     assert.equal(relational.status, 200)
     assert.equal(relationalData.questions[0].evidenceMethod, "semantic", "PostgreSQL must support the broader relational-database requirement")
     assert.equal(relationalData.questions[0].resumeExcerpt, "Designed PostgreSQL schemas for reporting.")
 
-    const postgresOnly = await fetch(`${BASE_URL}/api/interview-prep`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: `token=${ownerToken}` }, body: JSON.stringify({ resumeId: mismatchResume.id, jobDescription: "Required: PostgreSQL experience for your role." }) })
+    const postgresOnly = await runPrep(mismatchResume.id, "Required: PostgreSQL experience for your role.")
     const postgresOnlyData = await postgresOnly.json()
     assert.equal(postgresOnly.status, 200)
     assert.equal(postgresOnlyData.questions[0].evidenceStatus, "gap", "MySQL must not satisfy a PostgreSQL requirement")
 
-    const kubernetesOnly = await fetch(`${BASE_URL}/api/interview-prep`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: `token=${ownerToken}` }, body: JSON.stringify({ resumeId: mismatchResume.id, jobDescription: "Required: Kubernetes experience for your role." }) })
+    const kubernetesOnly = await runPrep(mismatchResume.id, "Required: Kubernetes experience for your role.")
+
+    for (const scenario of ["wrong-id", "failure", "timeout"]) {
+      const invalidCitation = await runPrep(evidenceResume.id, "Required: Docker experience for your role.", scenario)
+      const invalidCitationData = await invalidCitation.json()
+      assert.equal(invalidCitation.status, 200)
+      assert.equal(invalidCitationData.questions[0].questionGeneration, "template", `${scenario} must fall back to a template`)
+      assert.equal(invalidCitationData.retrieval.questionGenerationFallbackUsed, true)
+    }
+    const wrongRequirement = await runPrep(
+      evidenceResume.id,
+      "Required: Docker experience for your role. Required: TypeScript experience for your role.",
+      "wrong-requirement-id"
+    )
+    const wrongRequirementData = await wrongRequirement.json()
+    assert.equal(wrongRequirement.status, 200)
+    assert.ok(wrongRequirementData.questions.every((question) => question.questionGeneration === "template"), "A citation from another requirement must fall back to templates")
+    assert.equal(wrongRequirementData.retrieval.questionGenerationFallbackUsed, true)
+    const gapCitation = await runPrep(mismatchResume.id, "Required: Kubernetes experience for your role.", "no-evidence-id")
+    const gapCitationData = await gapCitation.json()
+    assert.equal(gapCitationData.questions[0].questionGeneration, "template", "A gap must not accept an invented citation")
     const kubernetesOnlyData = await kubernetesOnly.json()
     assert.equal(kubernetesOnly.status, 200)
     assert.equal(kubernetesOnlyData.questions[0].evidenceStatus, "gap", "Generic orchestration must not satisfy a Kubernetes requirement")

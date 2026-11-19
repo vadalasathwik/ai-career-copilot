@@ -4,6 +4,7 @@ export interface InterviewPracticeQuestion {
   resumeExcerpt: string | null
   evidenceStatus: "evidence" | "gap"
   evidenceMethod: "vector" | "semantic" | "keyword" | "none"
+  questionGeneration: "gemini" | "template"
   gapExplanation?: string
 }
 
@@ -175,6 +176,7 @@ export function createInterviewPracticeQuestions(
       resumeExcerpt,
       evidenceStatus: resumeExcerpt ? "evidence" : "gap",
       evidenceMethod,
+      questionGeneration: "template",
       gapExplanation: resumeExcerpt ? undefined : "No verbatim resume excerpt met the evidence rule for this requirement."
     }
   })
