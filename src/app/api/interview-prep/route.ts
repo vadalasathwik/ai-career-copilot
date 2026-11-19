@@ -36,8 +36,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, message: "The selected resume contains no readable extracted text. Please upload a readable resume." }, { status: 400 })
   }
 
+  const questions = createInterviewPracticeQuestions(parsed.data.jobDescription, resume.extractedText).slice(0, 5)
   return NextResponse.json({
     success: true,
-    questions: createInterviewPracticeQuestions(parsed.data.jobDescription, resume.extractedText).slice(0, 5)
+    questions,
+    retrieval: { keywordFallbackUsed: questions.some((question) => question.evidenceMethod === "keyword") }
   })
 }

@@ -19,8 +19,8 @@ async function runInterviewPrepTests() {
     evidenceResume = await prisma.resume.create({
       data: {
         userId: owner.id, fileName: "evidence.pdf", fileSize: 1, fileType: "application/pdf", filePath: "/tmp/evidence.pdf",
-        extractedText: "Built TypeScript services and React dashboards for customer analytics. Led Docker deployment automation. Maintained JavaScript user interfaces.",
-        skills: ["TypeScript", "React", "Docker", "JavaScript"]
+        extractedText: "Built TypeScript services and React dashboards for customer analytics. Led Docker deployment automation. Operated Kubernetes clusters for production workloads. Maintained JavaScript user interfaces.",
+        skills: ["TypeScript", "React", "Docker", "Kubernetes", "JavaScript"]
       }
     })
     emptyResume = await prisma.resume.create({
@@ -46,6 +46,8 @@ async function runInterviewPrepTests() {
     const gap = data.questions.find((question) => question.evidenceStatus === "gap" && question.jobRequirement.includes("Kubernetes"))
     assert.ok(evidence, "Expected a retrieval-backed question")
     assert.equal(evidence.resumeExcerpt, "Built TypeScript services and React dashboards for customer analytics.")
+    assert.equal(evidence.evidenceMethod, "keyword")
+    assert.equal(data.retrieval.keywordFallbackUsed, true)
     assert.ok(gap, "Expected a partially matched requirement to be a practice gap")
     assert.equal(gap.resumeExcerpt, null)
 
@@ -60,6 +62,13 @@ async function runInterviewPrepTests() {
     const dockerData = await dockerPunctuation.json()
     assert.equal(dockerData.questions[0].evidenceStatus, "evidence", "Terminal punctuation must not prevent Docker evidence retrieval")
     assert.equal(dockerData.questions[0].resumeExcerpt, "Led Docker deployment automation.")
+
+    const semantic = await fetch(`${BASE_URL}/api/interview-prep`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: `token=${ownerToken}` }, body: JSON.stringify({ resumeId: evidenceResume.id, jobDescription: "Required: container orchestration experience for your role." }) })
+    assert.equal(semantic.status, 200)
+    const semanticData = await semantic.json()
+    assert.equal(semanticData.questions[0].evidenceMethod, "semantic", "Kubernetes must support the container-orchestration paraphrase")
+    assert.equal(semanticData.questions[0].resumeExcerpt, "Operated Kubernetes clusters for production workloads.")
+    assert.equal(semanticData.retrieval.keywordFallbackUsed, false)
     console.log("✓ Interview prep: evidence, partial/gap, missing text, and unauthorized access passed.")
   } finally {
     if (evidenceResume) await prisma.resume.delete({ where: { id: evidenceResume.id } })

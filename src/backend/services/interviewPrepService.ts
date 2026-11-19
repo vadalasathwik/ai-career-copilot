@@ -3,6 +3,8 @@ export interface InterviewPracticeQuestion {
   jobRequirement: string
   resumeExcerpt: string | null
   evidenceStatus: "evidence" | "gap"
+  evidenceMethod: "semantic" | "keyword" | "none"
+  gapExplanation?: string
 }
 
 const STOP_WORDS = new Set([
@@ -53,6 +55,44 @@ function extractRequirements(jobDescription: string): string[] {
   }).slice(0, 5)
 }
 
+// Small, explicit equivalence sets let us retrieve common role-language
+// paraphrases without inventing candidate experience or relying on a model.
+const SEMANTIC_CONCEPTS = [
+  { concept: "container_orchestration", phrases: ["container orchestration", "kubernetes", "k8s"] },
+  { concept: "deployment_automation", phrases: ["deployment automation", "automated deployment", "ci/cd", "continuous integration", "continuous delivery"] },
+  { concept: "relational_data", phrases: ["relational database", "postgresql", "mysql", "sql database"] }
+]
+
+function semanticConcepts(text: string): Set<string> {
+  const normalized = text.normalize("NFKC").toLowerCase()
+  return new Set(
+    SEMANTIC_CONCEPTS
+      .filter(({ phrases }) => phrases.some((phrase) => normalized.includes(phrase)))
+      .map(({ concept }) => concept)
+  )
+}
+
+function findSemanticEvidence(requirement: string, resumeSentences: string[]): string | null {
+  const requiredConcepts = semanticConcepts(requirement)
+  if (requiredConcepts.size === 0) return null
+
+  const semanticTerms = new Set(
+    SEMANTIC_CONCEPTS
+      .filter(({ concept }) => requiredConcepts.has(concept))
+      .flatMap(({ phrases }) => phrases.flatMap(keywordTokens))
+  )
+  const remainingTerms = keywordTokens(requirement).filter((term) => !semanticTerms.has(term))
+
+  return resumeSentences.find((sentence) => {
+    const sentenceConcepts = semanticConcepts(sentence)
+    const sentenceTerms = new Set(keywordTokens(sentence))
+    return (
+      Array.from(requiredConcepts).every((concept) => sentenceConcepts.has(concept)) &&
+      remainingTerms.every((term) => sentenceTerms.has(term))
+    )
+  }) ?? null
+}
+
 function findEvidence(requirement: string, resumeSentences: string[]): string | null {
   const terms = keywordTokens(requirement)
   if (terms.length === 0) return null
@@ -86,12 +126,16 @@ export function createInterviewPracticeQuestions(
 ): InterviewPracticeQuestion[] {
   const resumeSentences = splitResumeSentences(resumeText)
   return extractRequirements(jobDescription).map((jobRequirement) => {
-    const resumeExcerpt = findEvidence(jobRequirement, resumeSentences)
+    const semanticExcerpt = findSemanticEvidence(jobRequirement, resumeSentences)
+    const resumeExcerpt = semanticExcerpt ?? findEvidence(jobRequirement, resumeSentences)
+    const evidenceMethod = semanticExcerpt ? "semantic" : resumeExcerpt ? "keyword" : "none"
     return {
       question: questionFor(jobRequirement, Boolean(resumeExcerpt)),
       jobRequirement,
       resumeExcerpt,
-      evidenceStatus: resumeExcerpt ? "evidence" : "gap"
+      evidenceStatus: resumeExcerpt ? "evidence" : "gap",
+      evidenceMethod,
+      gapExplanation: resumeExcerpt ? undefined : "No verbatim resume excerpt met the evidence rule for this requirement."
     }
   })
 }
