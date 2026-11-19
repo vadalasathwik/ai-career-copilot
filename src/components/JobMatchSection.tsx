@@ -11,6 +11,7 @@ interface ResumeSummary {
 
 interface JobMatchSectionProps {
   currentResume: ResumeSummary | null
+  onPrepareForInterview: (context: { resumeId: number; jobDescription: string; role?: string }) => void
 }
 
 interface InterviewPracticeQuestion {
@@ -29,7 +30,7 @@ interface CompletedMatch {
   jobDescription: string
 }
 
-function InterviewPrep({ resumeId, jobDescription }: { resumeId: number; jobDescription: string }) {
+export function InterviewPrep({ resumeId, jobDescription }: { resumeId: number; jobDescription: string }) {
   const [questions, setQuestions] = useState<InterviewPracticeQuestion[] | null>(null)
   const [keywordFallbackUsed, setKeywordFallbackUsed] = useState(false)
   const [questionGenerationFallbackUsed, setQuestionGenerationFallbackUsed] = useState(false)
@@ -103,7 +104,7 @@ function InterviewPrep({ resumeId, jobDescription }: { resumeId: number; jobDesc
   )
 }
 
-export default function JobMatchSection({ currentResume }: JobMatchSectionProps) {
+export default function JobMatchSection({ currentResume, onPrepareForInterview }: JobMatchSectionProps) {
   const [inputMode, setInputMode] = useState<"paste" | "url">("paste")
   const [jobUrl, setJobUrl] = useState("")
   const [fetchingUrl, setFetchingUrl] = useState(false)
@@ -116,12 +117,16 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
   const [matching, setMatching] = useState(false)
   const [matchError, setMatchError] = useState<string | null>(null)
   const [completedMatch, setCompletedMatch] = useState<CompletedMatch | null>(null)
+  const matchController = useRef<AbortController | null>(null)
+  const urlController = useRef<AbortController | null>(null)
   const matchResult = completedMatch?.result ?? null
   const hasCurrentMatch = Boolean(
     completedMatch &&
     completedMatch.resumeId === currentResume?.id &&
     completedMatch.jobDescription === jobDescription.trim()
   )
+
+  useEffect(() => () => { matchController.current?.abort(); urlController.current?.abort() }, [])
 
   // Handle URL Fetching via server endpoint
   async function handleFetchUrl(e: React.FormEvent) {
@@ -135,10 +140,13 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
 
     try {
       setFetchingUrl(true)
+      urlController.current?.abort()
+      const controller = new AbortController()
+      urlController.current = controller
       const res = await fetch("/api/jobs/fetch-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: jobUrl.trim() })
+        body: JSON.stringify({ url: jobUrl.trim() }), signal: controller.signal
       })
 
       const data = await res.json()
@@ -163,7 +171,8 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
         type: "success"
       })
       setInputMode("paste")
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return
       setUrlMessage({
         text: "Connecting to job URL timed out or failed. Please paste the job description text manually below.",
         type: "info"
@@ -191,10 +200,13 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
 
     try {
       setMatching(true)
+      matchController.current?.abort()
+      const controller = new AbortController()
+      matchController.current = controller
       const res = await fetch("/api/ai/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        signal: controller.signal, body: JSON.stringify({
           resumeId: currentResume.id,
           targetRole: targetRole.trim() || "Specified Position",
           jobDescription: jobDescription.trim()
@@ -208,6 +220,7 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
 
       setCompletedMatch({ result: data.jobMatch || data.analysis, resumeId: currentResume.id, jobDescription: jobDescription.trim() })
     } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === "AbortError") return
       setMatchError(err instanceof Error ? err.message : "Job match analysis failed.")
     } finally {
       setMatching(false)
@@ -230,15 +243,15 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
   }
 
   return (
-    <div className="bg-neutral-900/80 p-6 sm:p-7 rounded-3xl border border-neutral-800 flex flex-col gap-6 shadow-sm">
+    <div className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm sm:p-7 flex flex-col gap-6">
       {/* Section Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-800/80 pb-4">
+      <div className="flex flex-col gap-3 border-b border-stone-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2.5">
             <span className="text-xl">🎯</span>
-            <h2 className="text-xl font-bold text-white tracking-tight">Job Match</h2>
+            <h2 className="text-xl font-bold text-slate-950 tracking-tight">Job Match</h2>
           </div>
-          <p className="text-xs text-neutral-400 mt-1">
+          <p className="mt-1 text-sm text-slate-600">
             See how well your resume aligns with a role before you apply.
           </p>
         </div>
@@ -257,7 +270,7 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
       {/* Input Selector Tabs: Paste vs URL */}
       {!hasCurrentMatch && (
         <div className="flex flex-col gap-4">
-          <div className="flex items-center gap-2 p-1 bg-neutral-950 rounded-xl border border-neutral-800 w-fit">
+          <div className="flex w-fit items-center gap-1 rounded-lg border border-stone-200 bg-stone-100 p-1">
             <button
               type="button"
               onClick={() => {
@@ -266,8 +279,8 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
               }}
               className={`text-xs font-semibold px-4 py-1.5 rounded-lg transition ${
                 inputMode === "paste"
-                  ? "bg-neutral-800 text-white shadow-sm border border-neutral-700"
-                  : "text-neutral-400 hover:text-white"
+                  ? "bg-indigo-600 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-white hover:text-slate-950"
               }`}
             >
               Paste Job Description
@@ -280,8 +293,8 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
               }}
               className={`text-xs font-semibold px-4 py-1.5 rounded-lg transition ${
                 inputMode === "url"
-                  ? "bg-neutral-800 text-white shadow-sm border border-neutral-700"
-                  : "text-neutral-400 hover:text-white"
+                  ? "bg-indigo-600 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-white hover:text-slate-950"
               }`}
             >
               Use Job URL
@@ -323,12 +336,12 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
                 value={jobUrl}
                 onChange={(e) => setJobUrl(e.target.value)}
                 placeholder="https://www.linkedin.com/jobs/view/... or company career page URL"
-                className="flex-1 bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-neutral-600 focus:ring-1 focus:ring-emerald-500"
+                className="flex-1 rounded-lg border border-stone-300 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
               <button
                 type="submit"
                 disabled={fetchingUrl || !jobUrl.trim()}
-                className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-xl transition flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 shrink-0"
+                className="flex shrink-0 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-slate-400"
               >
                 {fetchingUrl ? (
                   <>
@@ -345,13 +358,13 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
           {/* Job Description Form */}
           <form onSubmit={handleRunJobMatch} className="flex flex-col gap-4">
             {inputMode === "url" && !jobDescription.trim() && (
-              <div className="bg-neutral-950/40 p-4 rounded-xl border border-neutral-800 text-xs text-neutral-400">
+              <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-4 text-sm text-indigo-950">
                 💡 Enter a public job posting URL above and click <strong>Fetch Job Details</strong>. You can review and edit the extracted role requirements before running match analysis.
               </div>
             )}
 
             {inputMode === "url" && jobDescription.trim() && (
-              <div className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 text-sm font-semibold text-indigo-700">
                 <span>✓</span>
                 <span>Review & edit extracted job posting details before analyzing:</span>
               </div>
@@ -359,7 +372,7 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
-                <label htmlFor="job-title-input" className="block text-[11px] font-medium text-neutral-300 mb-1">
+                <label htmlFor="job-title-input" className="mb-1 block text-xs font-medium text-slate-700">
                   Job Title / Target Role *
                 </label>
                 <input
@@ -369,12 +382,12 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
                   value={targetRole}
                   onChange={(e) => setTargetRole(e.target.value)}
                   placeholder="e.g. Senior Full Stack Engineer"
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-neutral-600 focus:ring-1 focus:ring-emerald-500"
+                  className="w-full rounded-lg border border-stone-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
 
               <div>
-                <label htmlFor="job-company-input" className="block text-[11px] font-medium text-neutral-300 mb-1">
+                <label htmlFor="job-company-input" className="mb-1 block text-xs font-medium text-slate-700">
                   Hiring Company (Optional)
                 </label>
                 <input
@@ -383,17 +396,17 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
                   value={jobCompany}
                   onChange={(e) => setJobCompany(e.target.value)}
                   placeholder="e.g. Apex Systems, Stripe, etc."
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-neutral-600 focus:ring-1 focus:ring-emerald-500"
+                  className="w-full rounded-lg border border-stone-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label htmlFor="job-desc-input" className="block text-[11px] font-medium text-neutral-300">
+                <label htmlFor="job-desc-input" className="block text-xs font-medium text-slate-700">
                   Job Description Content * (min 30 characters)
                 </label>
-                <span className="text-[10px] text-neutral-500">
+                <span className="text-[11px] text-slate-500">
                   {jobDescription.length > 0 ? `${jobDescription.length} characters` : ""}
                 </span>
               </div>
@@ -404,12 +417,12 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
                 value={jobDescription}
                 onChange={(e) => setJobDescription(e.target.value)}
                 placeholder="Paste the target job description here. Review and edit any extracted text to ensure all required skills and qualifications are included..."
-                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl p-3.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-neutral-600 focus:ring-1 focus:ring-emerald-500 leading-relaxed font-mono"
+                className="w-full rounded-lg border border-stone-300 bg-white p-3.5 text-sm leading-relaxed text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
               />
             </div>
 
             {matchError && (
-              <div className="bg-rose-950/80 border border-rose-800 text-rose-300 text-xs p-3 rounded-xl flex items-center justify-between">
+              <div role="alert" className="flex items-center justify-between rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
                 <span>⚠️ {matchError}</span>
                 <button type="button" onClick={() => setMatchError(null)} className="text-rose-400 font-bold ml-2">
                   ✕
@@ -418,7 +431,7 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
             )}
 
             <div className="flex items-center justify-between pt-1 flex-wrap gap-3">
-              <span className="text-[11px] text-neutral-500">
+              <span className="text-xs text-slate-600">
                 {currentResume
                   ? `Comparing against resume: ${currentResume.fileName}`
                   : "Upload a resume in Resume Review before running analysis."}
@@ -427,7 +440,7 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
               <button
                 type="submit"
                 disabled={matching || !currentResume || jobDescription.trim().length < 30}
-                className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-xl transition flex items-center gap-2 shadow-sm disabled:opacity-50"
+                className="flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-slate-400"
               >
                 {matching ? (
                   <>
@@ -546,11 +559,10 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
 
           <LearningPlanSection missingSkills={matchResult.missingRequiredSkills || []} />
 
-          <InterviewPrep
-            key={`${completedMatch.resumeId}:${completedMatch.jobDescription}`}
-            resumeId={completedMatch.resumeId}
-            jobDescription={completedMatch.jobDescription}
-          />
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 sm:flex sm:items-center sm:justify-between">
+            <div><h4 className="text-sm font-bold text-indigo-950">Ready to practice?</h4><p className="mt-1 text-xs leading-relaxed text-indigo-800">Use this role and your selected resume to generate evidence-backed interview questions.</p></div>
+            <button type="button" onClick={() => onPrepareForInterview({ resumeId: completedMatch.resumeId, jobDescription: completedMatch.jobDescription, role: targetRole.trim() || undefined })} className="mt-3 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:mt-0">Prepare for this interview</button>
+          </div>
 
           {/* Partially Matching Skills */}
           {matchResult.partiallyMatchingSkills && matchResult.partiallyMatchingSkills.length > 0 && (

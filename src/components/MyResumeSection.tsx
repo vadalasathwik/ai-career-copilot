@@ -32,6 +32,9 @@ export default function MyResumeSection({ onActiveResumeChange }: MyResumeSectio
   const [qualityReport, setQualityReport] = useState<ResumeQualityReport | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const analysisController = useRef<AbortController | null>(null)
+
+  useEffect(() => () => analysisController.current?.abort(), [])
 
   // Fetch the latest user resume on mount
   useEffect(() => {
@@ -125,6 +128,7 @@ export default function MyResumeSection({ onActiveResumeChange }: MyResumeSectio
 
       setResume(data.resume)
       setQualityReport(null) // Reset quality report for newly uploaded resume
+      analysisController.current?.abort()
       setSuccess(`"${file.name}" uploaded successfully. Click "Review Resume" to evaluate quality.`)
       if (onActiveResumeChange) {
         onActiveResumeChange(data.resume)
@@ -141,11 +145,15 @@ export default function MyResumeSection({ onActiveResumeChange }: MyResumeSectio
     if (!resume) return
     setError(null)
     setAnalyzing(true)
+    analysisController.current?.abort()
+    const controller = new AbortController()
+    analysisController.current = controller
 
     try {
       const res = await fetch("/api/ai/quality", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({ resumeId: resume.id })
       })
 
@@ -168,9 +176,10 @@ export default function MyResumeSection({ onActiveResumeChange }: MyResumeSectio
           : null
       )
     } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === "AbortError") return
       setError(err instanceof Error ? err.message : "Analysis failed. Please try again.")
     } finally {
-      setAnalyzing(false)
+      if (analysisController.current === controller) setAnalyzing(false)
     }
   }
 
@@ -194,9 +203,9 @@ export default function MyResumeSection({ onActiveResumeChange }: MyResumeSectio
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading || analyzing}
             aria-label="Replace current resume file"
-            className="text-xs font-semibold bg-neutral-800 hover:bg-neutral-700 text-neutral-200 px-3.5 py-2 rounded-xl border border-neutral-700 transition self-start sm:self-auto disabled:opacity-50"
+            className="self-start rounded-lg border border-stone-300 bg-white px-3.5 py-2 text-xs font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-slate-400 sm:self-auto"
           >
-            {uploading ? "Uploading..." : "↻ Replace Resume"}
+            {uploading ? "Uploading..." : "Upload a new resume"}
           </button>
         )}
       </div>
@@ -256,7 +265,7 @@ export default function MyResumeSection({ onActiveResumeChange }: MyResumeSectio
             📄
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-white">Click to upload or drag & drop your resume</h3>
+            <h3 className="text-sm font-semibold text-white">Upload resume</h3>
             <p className="text-xs text-neutral-400 mt-1">Accepts PDF or DOCX format (up to 5 MB)</p>
           </div>
         </div>
@@ -292,7 +301,7 @@ export default function MyResumeSection({ onActiveResumeChange }: MyResumeSectio
                   day: "numeric",
                   year: "numeric"
                 })}{" "}
-                • {resume.skills?.length || 0} skills detected
+                • {resume.skills?.length || 0} upload-extracted skill tags
               </p>
             </div>
           </div>
@@ -493,7 +502,7 @@ export default function MyResumeSection({ onActiveResumeChange }: MyResumeSectio
             <div className="bg-neutral-950/70 p-4 rounded-xl border border-neutral-800 flex flex-col gap-2.5">
               <span className="text-xs font-bold text-white border-b border-neutral-800 pb-2 flex items-center gap-1.5">
                 <span>🔑</span>
-                <span>Skills & Keywords Detected on Resume ({qualityReport.detectedSkills.length})</span>
+                <span>Review-detected skills & keywords ({qualityReport.detectedSkills.length})</span>
               </span>
               <div className="flex flex-wrap gap-1.5 pt-1">
                 {qualityReport.detectedSkills.map((skill, idx) => (

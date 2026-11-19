@@ -1,8 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
 import { signOut } from "next-auth/react"
 
 interface NavbarProps {
@@ -14,9 +13,14 @@ interface NavbarProps {
 }
 
 export default function Navbar({ user }: NavbarProps) {
-  const pathname = usePathname()
   const [profileOpen, setProfileOpen] = useState(false)
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) { if (event.key === "Escape") setProfileOpen(false) }
+    function closeOnOutside(event: MouseEvent) { if (!menuRef.current?.contains(event.target as Node)) setProfileOpen(false) }
+    document.addEventListener("keydown", closeOnEscape); document.addEventListener("mousedown", closeOnOutside)
+    return () => { document.removeEventListener("keydown", closeOnEscape); document.removeEventListener("mousedown", closeOnOutside) }
+  }, [])
 
   async function handleLogout() {
     try {
@@ -39,86 +43,43 @@ export default function Navbar({ user }: NavbarProps) {
   }
 
   const initial = user?.name ? user.name.charAt(0).toUpperCase() : "U"
-  const isWorkspace = pathname === "/" || pathname === "/dashboard"
-
   return (
-    <header className="sticky top-0 z-40 w-full bg-neutral-950/90 backdrop-blur-md border-b border-neutral-800">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-        {/* Brand & Logo */}
-        <div className="flex items-center gap-8">
-          <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-cyan-500 flex items-center justify-center text-white font-bold text-sm shadow-sm group-hover:scale-105 transition">
-              ✦
-            </div>
-            <div>
-              <span className="text-base font-bold text-white tracking-tight block">
-                AI Career Copilot
-              </span>
-            </div>
-          </Link>
-
-          {/* Primary Navigation Item: Workspace */}
-          <nav className="hidden sm:flex items-center gap-1">
-            <Link
-              href="/"
-              className={`text-xs font-semibold px-3.5 py-1.5 rounded-xl transition flex items-center gap-1.5 ${
-                isWorkspace
-                  ? "bg-neutral-800 text-white shadow-sm border border-neutral-700/80"
-                  : "text-neutral-400 hover:text-white hover:bg-neutral-900"
-              }`}
-            >
-              <span>⚡</span>
-              <span>Workspace</span>
-            </Link>
-          </nav>
-        </div>
-
-        {/* User Profile Menu & Mobile Toggle */}
-        <div className="flex items-center gap-3">
-          {/* Mobile Menu Button */}
-          <button
-            type="button"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="sm:hidden p-2 rounded-xl text-neutral-400 hover:text-white hover:bg-neutral-900 border border-neutral-800"
-            aria-label="Toggle navigation menu"
-          >
-            {mobileMenuOpen ? "✕" : "☰"}
-          </button>
-
-          {/* User Profile Dropdown */}
-          <div className="relative">
+    <header className="sticky top-0 z-40 border-b border-stone-200 bg-white/95 backdrop-blur">
+      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+        <Link href="/" className="flex min-w-0 items-center gap-2 text-sm font-bold text-slate-950 focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-lg"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white">✦</span><span className="truncate">AI Career Copilot</span></Link>
+        <div ref={menuRef} className="relative">
             <button
               type="button"
               onClick={() => setProfileOpen(!profileOpen)}
-              className="flex items-center gap-2.5 p-1 rounded-full hover:ring-2 hover:ring-neutral-700 transition"
-              aria-label="User account menu"
+              className="flex max-w-[12rem] items-center gap-2 rounded-lg px-2 py-1.5 text-slate-700 hover:bg-stone-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              aria-label="User account menu" aria-expanded={profileOpen} aria-haspopup="menu"
             >
               {user?.image ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={user.image}
                   alt={user.name || "User"}
-                  className="w-8 h-8 rounded-full border border-neutral-700 object-cover"
+                  className="h-7 w-7 rounded-full border border-stone-200 object-cover"
                 />
               ) : (
-                <div className="w-8 h-8 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center text-xs font-bold text-emerald-400">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-xs font-bold text-indigo-700">
                   {initial}
                 </div>
               )}
-              <span className="hidden md:block text-xs font-medium text-neutral-300 max-w-[120px] truncate">
+              <span className="hidden max-w-[120px] truncate text-xs font-medium sm:block">
                 {user?.name || "Account"}
               </span>
-              <span className="text-[10px] text-neutral-500 hidden md:block">▼</span>
+              <span className="text-[10px] text-slate-400">⌄</span>
             </button>
 
             {/* Profile Dropdown Menu */}
             {profileOpen && (
-              <div className="absolute right-0 mt-2 w-52 bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-100">
-                <div className="px-3 py-2 border-b border-neutral-800">
-                  <p className="text-xs font-semibold text-white truncate">
+              <div role="menu" className="absolute right-0 mt-2 w-56 rounded-xl border border-stone-200 bg-white p-2 shadow-lg">
+                <div className="border-b border-stone-100 px-3 py-2">
+                  <p className="truncate text-xs font-semibold text-slate-900">
                     {user?.name || "User"}
                   </p>
-                  <p className="text-[11px] text-neutral-400 truncate">
+                  <p className="truncate text-[11px] text-slate-500">
                     {user?.email || ""}
                   </p>
                 </div>
@@ -127,17 +88,17 @@ export default function Navbar({ user }: NavbarProps) {
                   <Link
                     href="/profile"
                     onClick={() => setProfileOpen(false)}
-                    className="w-full text-left text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 px-3 py-2 rounded-xl transition flex items-center gap-2"
+                    role="menuitem" className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-slate-700 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
                     <span>👤</span> Profile
                   </Link>
 
-                  <div className="my-1 border-t border-neutral-800" />
+                  <div className="my-1 border-t border-stone-100" />
 
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="w-full text-left text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 px-3 py-2 rounded-xl transition flex items-center gap-2"
+                    role="menuitem" className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-rose-700 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
                     <span>🚪</span> Sign Out
                   </button>
@@ -145,47 +106,7 @@ export default function Navbar({ user }: NavbarProps) {
               </div>
             )}
           </div>
-        </div>
       </div>
-
-      {/* Mobile Drawer */}
-      {mobileMenuOpen && (
-        <div className="sm:hidden border-t border-neutral-800 bg-neutral-950 p-4 flex flex-col gap-2">
-          <Link
-            href="/"
-            onClick={() => setMobileMenuOpen(false)}
-            className={`text-xs font-semibold px-3.5 py-2.5 rounded-xl transition flex items-center gap-2 ${
-              isWorkspace
-                ? "bg-neutral-800 text-white"
-                : "text-neutral-400 hover:text-white hover:bg-neutral-900"
-            }`}
-          >
-            <span>⚡</span> Workspace
-          </Link>
-
-          <Link
-            href="/profile"
-            onClick={() => setMobileMenuOpen(false)}
-            className={`text-xs font-semibold px-3.5 py-2.5 rounded-xl transition flex items-center gap-2 ${
-              pathname === "/profile"
-                ? "bg-neutral-800 text-white"
-                : "text-neutral-400 hover:text-white hover:bg-neutral-900"
-            }`}
-          >
-            <span>👤</span> Profile
-          </Link>
-
-          <div className="border-t border-neutral-800 my-1" />
-
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="w-full text-left text-xs font-semibold text-rose-400 hover:bg-rose-950/40 px-3.5 py-2.5 rounded-xl transition flex items-center gap-2"
-          >
-            <span>🚪</span> Sign Out
-          </button>
-        </div>
-      )}
     </header>
   )
 }

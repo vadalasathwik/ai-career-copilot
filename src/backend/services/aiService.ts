@@ -109,6 +109,76 @@ const qualityReportSchema = z.object({
   keyImprovements: z.array(z.string()).default([])
 })
 
+const REVIEW_SKILL_TERMS = [
+  "JavaScript", "TypeScript", "Python", "Java", "React", "Next.js", "Node.js", "GraphQL", "PostgreSQL", "MySQL",
+  "MongoDB", "Redis", "Docker", "Kubernetes", "AWS", "Azure", "Google Cloud", "Terraform", "CI/CD", "Git", "Linux"
+]
+const UNKNOWN_METRIC_PATTERN = /\[\s*(?:x|number|metric|count|amount|tbd|unknown)\s*\]|\b(?:tbd|unknown|n\/?a)\b/i
+const SCALE_PATTERN = /\b(?:thousand|thousands|million|millions|billion|billions|dozens|hundreds)\b/i
+const ACCOMPLISHMENT_VERBS = /\b(?:led|spearheaded|architected|launched|delivered|achieved|increased|reduced|saved|grew|scaled|optimized|built|created|implemented|managed|owned|designed|developed|improved)\b/gi
+
+function normalizeForGrounding(value: string): string {
+  return value.replace(/\s+/g, " ").trim().toLowerCase()
+}
+
+function containsTerm(text: string, term: string): boolean {
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  return new RegExp(`(^|[^a-z0-9#+])${escaped.toLowerCase()}($|[^a-z0-9#+])`, "i").test(text)
+}
+
+function hasUnsupportedSkill(original: string, suggestion: string): boolean {
+  return REVIEW_SKILL_TERMS.some((skill) => containsTerm(suggestion, skill) && !containsTerm(original, skill))
+}
+
+function hasUnsupportedAccomplishment(original: string, suggestion: string): boolean {
+  const originalVerbs = new Set((original.match(ACCOMPLISHMENT_VERBS) ?? []).map((verb) => verb.toLowerCase()))
+  return (suggestion.match(ACCOMPLISHMENT_VERBS) ?? []).some((verb) => !originalVerbs.has(verb.toLowerCase()))
+}
+
+function hasUnsupportedNumberOrScale(original: string, suggestion: string): boolean {
+  const originalNumbers = new Set(original.match(/\d+(?:[,.]\d+)?%?/g) ?? [])
+  const suggestionNumbers = suggestion.match(/\d+(?:[,.]\d+)?%?/g) ?? []
+  return (SCALE_PATTERN.test(suggestion) && !SCALE_PATTERN.test(original)) || suggestionNumbers.some((value) => !originalNumbers.has(value))
+}
+
+function safeRevision(originalText: string, suggestedRevision: string, explanation: string): GrammarCorrection {
+  const original = originalText.trim()
+  const suggestion = suggestedRevision.trim()
+  const introducesMetric = hasUnsupportedNumberOrScale(original, suggestion)
+
+  if (UNKNOWN_METRIC_PATTERN.test(original)) {
+    return {
+      originalText: original,
+      suggestedRevision: "Add your verified value for [X], or remove the metric and keep only the outcome you can substantiate.",
+      explanation: "This line contains an unknown metric. Provide the real value before making a scale claim."
+    }
+  }
+
+  if (introducesMetric || hasUnsupportedSkill(original, suggestion) || hasUnsupportedAccomplishment(original, suggestion)) {
+    return {
+      originalText: original,
+      suggestedRevision: original,
+      explanation: "This suggestion could add an unsupported metric, skill, or accomplishment. Keep the original claim and revise only details you can verify."
+    }
+  }
+
+  return { originalText: original, suggestedRevision: suggestion, explanation: explanation.trim() }
+}
+
+/** Keeps review rewrites grounded in a verbatim line from the uploaded resume. */
+export function groundResumeQualityReport(report: ResumeQualityReport, resumeText: string): ResumeQualityReport {
+  const normalizedResume = normalizeForGrounding(resumeText)
+  const groundCorrections = (items: GrammarCorrection[]) => items
+    .filter((item) => item.originalText && item.suggestedRevision && normalizedResume.includes(normalizeForGrounding(item.originalText)))
+    .map((item) => safeRevision(item.originalText, item.suggestedRevision, item.explanation))
+
+  return {
+    ...report,
+    grammarSpelling: groundCorrections(report.grammarSpelling),
+    awkwardPhrasing: groundCorrections(report.awkwardPhrasing)
+  }
+}
+
 const jobMatchReportSchema = z.object({
   matchScore: z.coerce
     .number()
@@ -771,7 +841,7 @@ export async function analyzeResumeQuality({
   }
 
   if (forceMock || mockClient) {
-    return {
+    return groundResumeQualityReport({
       atsScore: 82,
       summary:
         "Resume demonstrates solid technical structure with clear career progression, but would benefit from stronger quantified metrics and correcting minor phrasing inconsistencies.",
@@ -785,8 +855,8 @@ export async function analyzeResumeQuality({
       awkwardPhrasing: [
         {
           originalText: "did multiple works on database optimizations",
-          suggestedRevision: "spearheaded database query optimization initiatives reducing query latency by 30%",
-          explanation: "Replaced vague phrasing with action-oriented vocabulary and measurable business impact."
+          suggestedRevision: "Improved database query performance.",
+          explanation: "Uses clearer, concise wording without adding an unverified metric."
         }
       ],
       formattingReadability: [
@@ -802,7 +872,7 @@ export async function analyzeResumeQuality({
         "Incorporate quantified business metrics (e.g., latency reduction, cost savings, user scale).",
         "Group skills by technical category (Languages, Frameworks, Cloud, Databases) for faster recruiter parsing."
       ]
-    }
+    }, resumeText)
   }
 
   const client = getGeminiClient()
@@ -821,6 +891,8 @@ CRITICAL SECURITY AND AUDIT DIRECTIVES:
    - DO NOT fabricate errors. If the resume has zero grammar errors, return an empty array [].
 4. Awkward or unclear sentences:
    - Identify passive, convoluted, or wordy phrasing and provide a punchy, active revision.
+   - A rewrite must be grounded in its exact "originalText" line. Never add numbers, percentages, user/customer scale, skills, technologies, responsibilities, accomplishments, or outcomes that are not explicitly supported by that line.
+   - If a metric is a placeholder or unknown (for example "[X] users"), ask the user to provide the real value, or suggest wording that omits the metric. Do not estimate or substitute a scale such as "thousands".
 5. Formatting & readability:
    - Identify visual layout, bullet point length, or readability concerns.
 6. Missing sections or information:
@@ -969,7 +1041,7 @@ Perform a complete quality, grammar, and ATS structure audit of this resume. Ret
   }
 
   const d = validated.data
-  return {
+  return groundResumeQualityReport({
     atsScore: Math.max(0, Math.min(100, Math.round(d.atsScore))),
     summary: d.summary.trim(),
     grammarSpelling: d.grammarSpelling.filter((g) => g.originalText && g.suggestedRevision),
@@ -978,7 +1050,7 @@ Perform a complete quality, grammar, and ATS structure audit of this resume. Ret
     missingSections: d.missingSections.map((s) => s.trim()).filter(Boolean),
     detectedSkills: Array.from(new Set(d.detectedSkills.map((s) => s.trim()).filter(Boolean))),
     keyImprovements: d.keyImprovements.map((s) => s.trim()).filter(Boolean)
-  }
+  }, resumeText)
 }
 
 /**
