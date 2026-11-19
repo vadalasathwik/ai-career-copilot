@@ -122,6 +122,13 @@ function findEvidence(requirement: string, resumeSentences: string[]): string | 
   return best?.sentence ?? null
 }
 
+export function ruleBasedCandidates(requirement: string, excerpts: string[]): { keyword: string[]; synonym: string[] } {
+  return {
+    keyword: excerpts.filter((excerpt) => Boolean(findEvidence(requirement, [excerpt]))).slice(0, 3),
+    synonym: excerpts.filter((excerpt) => Boolean(findSemanticEvidence(requirement, [excerpt]))).slice(0, 3)
+  }
+}
+
 /** Applies the same directional proof rule to a vector-ranked candidate. */
 export function evidenceRuleMatches(requirement: string, excerpt: string): boolean {
   return Boolean(findSemanticEvidence(requirement, [excerpt]) ?? findEvidence(requirement, [excerpt]))
