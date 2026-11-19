@@ -38,6 +38,11 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
 
+    // Exercise the unexpected-failure boundary in non-production regression tests.
+    if (process.env.NODE_ENV !== "production" && request.headers.get("x-test-force-parser-failure") === "true") {
+      throw new Error("Forced parser failure")
+    }
+
     const resume = await processAndSaveResume({
       buffer,
       originalName: file.name,
@@ -61,10 +66,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Do not expose storage/database details or document contents to the client.
-    console.error("[resume-upload] Unexpected processing failure", {
-      errorName: error instanceof Error ? error.name : "UnknownError",
-      errorMessage: error instanceof Error ? error.message : "Unknown error"
-    })
+    console.error("[resume-upload] Unexpected processing failure", { code: "RESUME_UPLOAD_UNEXPECTED" })
     return NextResponse.json(
       {
         success: false,

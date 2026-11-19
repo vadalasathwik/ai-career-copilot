@@ -16,6 +16,28 @@ export class ResumeInputError extends Error {
   }
 }
 
+function isRecognizedInvalidDocumentError(error: unknown, ext: string): boolean {
+  if (!(error instanceof Error)) return false
+
+  const message = error.message.toLowerCase()
+  if (ext === ".pdf") {
+    return (
+      error.name === "InvalidPDFException" ||
+      error.name === "PasswordException" ||
+      message.includes("invalid pdf") ||
+      message.includes("password") ||
+      message.includes("no readable text")
+    )
+  }
+
+  return (
+    message.includes("corrupt") ||
+    message.includes("zip") ||
+    message.includes("end of central directory") ||
+    message.includes("no readable text")
+  )
+}
+
 // Curated dictionary of technical skills for initial skill tagging
 const COMMON_SKILLS = [
   "JavaScript", "TypeScript", "Python", "Java", "C++", "C#", "Go", "Rust", "PHP", "Ruby", "Swift", "Kotlin",
@@ -157,10 +179,13 @@ export async function extractText(buffer: Buffer, ext: string): Promise<string> 
       }
       return text
     } catch (err) {
-      if (err instanceof Error && err.message.includes("No readable text")) {
+      if (err instanceof ResumeInputError) {
         throw err
       }
-      throw new ResumeInputError("Failed to parse the PDF document. Please upload a valid, text-based PDF.")
+      if (isRecognizedInvalidDocumentError(err, ext)) {
+        throw new ResumeInputError("Failed to parse the PDF document. Please upload a valid, text-based PDF.")
+      }
+      throw err
     }
   } else {
     try {
@@ -173,10 +198,13 @@ export async function extractText(buffer: Buffer, ext: string): Promise<string> 
       }
       return text
     } catch (err) {
-      if (err instanceof Error && err.message.includes("No readable text")) {
+      if (err instanceof ResumeInputError) {
         throw err
       }
-      throw new ResumeInputError("Failed to parse the DOCX document. The file may be corrupt or invalid.")
+      if (isRecognizedInvalidDocumentError(err, ext)) {
+        throw new ResumeInputError("Failed to parse the DOCX document. The file may be corrupt or invalid.")
+      }
+      throw err
     }
   }
 }

@@ -55,6 +55,17 @@ async function runResumeUploadRegression() {
     })
     assert.equal(invalidUpload.status, 400, "Invalid PDF content must remain a client validation error")
 
+    const unexpected = new FormData()
+    unexpected.append("resume", new Blob([fs.readFileSync("tests/fixtures/known_good_resume.pdf")], { type: "application/pdf" }), "synthetic_text_resume.pdf")
+    const unexpectedUpload = await fetch(`${BASE_URL}/api/resumes/upload`, {
+      method: "POST",
+      headers: { Cookie: cookie, "x-test-force-parser-failure": "true" },
+      body: unexpected
+    })
+    const unexpectedData = await unexpectedUpload.json()
+    assert.equal(unexpectedUpload.status, 500, "Unexpected parser failures must use the generic server-error path")
+    assert.equal(unexpectedData.message, "We could not save your resume right now. Please try again.")
+
     const quality = await fetch(`${BASE_URL}/api/ai/quality`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Cookie: cookie, "x-test-mock-gemini": "true" },
@@ -78,7 +89,7 @@ async function runResumeUploadRegression() {
     const prepData = await prep.json()
     assert.equal(prep.status, 200, "Newly uploaded resume must support Interview Prep")
     assert.ok(Array.isArray(prepData.questions))
-    console.log("✓ Sign-in, workspace upload field, 201 persistence, quality review, Job Match, Interview Prep, and invalid-file 400 behavior passed.")
+    console.log("✓ Sign-in, workspace upload field, 201 persistence, quality review, Job Match, Interview Prep, invalid-file 400, and unexpected-parser 500 behavior passed.")
   } finally {
     if (resumeId) await prisma.resume.delete({ where: { id: resumeId } })
     if (user) await prisma.user.delete({ where: { id: user.id } })
