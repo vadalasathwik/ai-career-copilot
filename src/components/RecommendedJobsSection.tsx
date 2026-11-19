@@ -55,27 +55,36 @@ export default function RecommendedJobsSection({ resumeId }: RecommendedJobsSect
     }
   }, [resumeId])
 
-  function getWorkModeBadge(mode?: string | null) {
-    if (!mode) return null
-    if (mode === "REMOTE") {
+  function getWorkModeBadge(mode?: string | null, location?: string | null) {
+    const inferredMode = !mode && location
+      ? /\bremote\b/i.test(location) ? "REMOTE" : /\bhybrid\b/i.test(location) ? "HYBRID" : /\bon[ -]?site\b/i.test(location) ? "ON_SITE" : null
+      : null
+    const supportedMode = mode === "REMOTE" || mode === "HYBRID" || mode === "ON_SITE" ? mode : inferredMode
+    if (supportedMode === "REMOTE") {
       return (
         <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800 font-medium">
           🌐 Remote
         </span>
       )
     }
-    if (mode === "HYBRID") {
+    if (supportedMode === "HYBRID") {
       return (
         <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-950 text-purple-300 border border-purple-800 font-medium">
           🏢 Hybrid
         </span>
       )
     }
-    return (
-      <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700 font-medium">
+    if (supportedMode === "ON_SITE") return (
+      <span className="rounded-full border border-stone-300 bg-stone-100 px-2 py-0.5 text-[10px] font-medium text-slate-700">
         📍 On-site
       </span>
     )
+    return <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-900 text-neutral-500 border border-neutral-800 font-medium">Work mode not listed</span>
+  }
+
+  function getLocationLabel(location?: string | null) {
+    if (!location || /\b(remote|hybrid|on[ -]?site)\b/i.test(location)) return null
+    return location
   }
 
   function getScoreBadgeColor(score: number) {
@@ -147,8 +156,8 @@ export default function RecommendedJobsSection({ resumeId }: RecommendedJobsSect
                     </div>
                     <div className="flex items-center gap-2 text-xs text-neutral-400 flex-wrap">
                       <span className="font-semibold text-neutral-200">{job.company}</span>
-                      {job.location && <span>• {job.location}</span>}
-                      {getWorkModeBadge(job.remoteStatus)}
+                      {getLocationLabel(job.location) && <span>• {getLocationLabel(job.location)}</span>}
+                      {getWorkModeBadge(job.remoteStatus, job.location)}
                     </div>
                   </div>
 

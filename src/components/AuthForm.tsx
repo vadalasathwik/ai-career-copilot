@@ -20,6 +20,7 @@ export default function AuthForm() {
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -52,31 +53,29 @@ export default function AuthForm() {
   }
 
   return (
-    <div className="bg-neutral-900/90 border border-neutral-800 p-8 sm:p-10 rounded-3xl w-full max-w-md flex flex-col gap-6 shadow-2xl">
+    <div className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-6 shadow-xl sm:p-8">
       {/* Product Branding & Description */}
       <div className="text-center flex flex-col items-center gap-2">
-        <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-cyan-500 flex items-center justify-center text-white font-bold text-xl shadow-sm mb-1">
+        <div className="mb-1 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-xl font-bold text-white shadow-sm">
           ✦
         </div>
-        <h1 className="text-2xl font-extrabold text-white tracking-tight">AI Career Copilot</h1>
-        <p className="text-xs text-neutral-400 max-w-xs leading-relaxed">
-          Minimal resume quality auditor, job-description matcher, and career recommendation tool.
-        </p>
+        <h1 className="text-2xl font-extrabold tracking-tight text-slate-950">AI Career Copilot</h1>
+        <p className="max-w-xs text-xs leading-relaxed text-slate-600">A focused workspace for your resume, target roles, and interview practice.</p>
       </div>
 
       {/* Form Card */}
       <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
-        <div className="flex items-center justify-between border-b border-neutral-800 pb-2">
-          <span className="text-sm font-bold text-white">{isLogin ? "Sign In" : "Create Account"}</span>
+        <div className="flex items-center justify-between border-b border-stone-200 pb-3">
+          <span className="text-sm font-bold text-slate-950">{isLogin ? "Sign in" : "Create account"}</span>
           <button
             type="button"
             onClick={() => {
               setIsLogin(!isLogin)
               setError("")
             }}
-            className="text-xs text-emerald-400 hover:text-emerald-300 transition"
+            className="text-xs font-semibold text-indigo-700 hover:text-indigo-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded"
           >
-            {isLogin ? "Need an account? Signup" : "Already registered? Login"}
+            {isLogin ? "Create account" : "Sign in instead"}
           </button>
         </div>
 
@@ -91,63 +90,62 @@ export default function AuthForm() {
 
         {!isLogin && (
           <div>
-            <label className="block text-[11px] font-medium text-neutral-400 mb-1">Your Name</label>
+            <label className="mb-1 block text-[11px] font-medium text-slate-700">Your name</label>
             <input
               type="text"
               required
               placeholder="e.g. Alex Morgan"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full bg-neutral-950 border border-neutral-800 p-3 rounded-xl text-xs text-white placeholder-neutral-500 outline-none focus:border-neutral-600"
+              className="w-full rounded-lg border border-stone-300 bg-white p-3 text-sm text-slate-900 placeholder-slate-400 outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
         )}
 
         <div>
-          <label className="block text-[11px] font-medium text-neutral-400 mb-1">Email Address</label>
+          <label className="mb-1 block text-[11px] font-medium text-slate-700">Email address</label>
           <input
             type="email"
             required
             placeholder="you@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full bg-neutral-950 border border-neutral-800 p-3 rounded-xl text-xs text-white placeholder-neutral-500 outline-none focus:border-neutral-600"
+            className="w-full rounded-lg border border-stone-300 bg-white p-3 text-sm text-slate-900 placeholder-slate-400 outline-none focus:ring-2 focus:ring-indigo-500"
           />
         </div>
 
         <div>
-          <label className="block text-[11px] font-medium text-neutral-400 mb-1">Password</label>
-          <input
-            type="password"
+          <label className="mb-1 block text-[11px] font-medium text-slate-700">Password</label><div className="relative"><input
+              type={showPassword ? "text" : "password"}
             required
             placeholder="••••••••"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full bg-neutral-950 border border-neutral-800 p-3 rounded-xl text-xs text-white placeholder-neutral-500 outline-none focus:border-neutral-600"
-          />
+              className="w-full rounded-lg border border-stone-300 bg-white p-3 pr-14 text-sm text-slate-900 placeholder-slate-400 outline-none focus:ring-2 focus:ring-indigo-500"
+            /><button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-1 text-xs font-semibold text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">{showPassword ? "Hide" : "Show"}</button></div>
         </div>
 
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-white hover:bg-neutral-200 text-black p-3 rounded-xl font-semibold text-xs transition duration-200 mt-1 disabled:opacity-50"
+          className="mt-1 w-full rounded-lg bg-indigo-600 p-3 text-sm font-semibold text-white transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
         >
           {loading ? "Processing..." : isLogin ? "Sign In" : "Create Account"}
         </button>
 
         <div className="relative my-2">
           <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-neutral-800" />
+            <div className="w-full border-t border-stone-200" />
           </div>
           <div className="relative flex justify-center text-[10px] uppercase">
-            <span className="bg-neutral-900 px-2 text-neutral-500 font-mono">Or continue with</span>
+            <span className="bg-white px-2 font-mono text-slate-400">Or continue with</span>
           </div>
         </div>
 
         <button
           type="button"
           onClick={() => signIn("google", { callbackUrl: "/" })}
-          className="w-full bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 p-3 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2"
+          className="flex w-full items-center justify-center gap-2 rounded-lg border border-stone-300 bg-white p-3 text-sm font-semibold text-slate-700 transition hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         >
           <span>G</span>
           <span>Google Account</span>
