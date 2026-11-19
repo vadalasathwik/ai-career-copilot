@@ -6,11 +6,11 @@ export default async function AuthPage() {
   const user = await getCurrentUser()
 
   if (user) {
-    redirect("/dashboard")
+    redirect("/")
   }
 
   return (
-    <main className="min-h-screen bg-black text-white flex items-center justify-center">
+    <main className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-4">
       <AuthForm />
     </main>
   )

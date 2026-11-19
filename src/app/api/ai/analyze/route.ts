@@ -3,7 +3,7 @@ import { z } from "zod"
 import { authenticateApiUser } from "@/backend/auth/session"
 import { prisma } from "@/backend/db/prisma"
 import {
-  analyzeResumeWithGemini,
+  analyzeJobMatchWithGemini,
   MissingApiKeyError,
   GeminiAnalysisError,
   StructuredResumeAnalysis
@@ -89,7 +89,7 @@ export async function POST(req: Request) {
     const forceMock =
       process.env.NODE_ENV !== "production" && req.headers.get("x-test-mock-gemini") === "true"
 
-    const analysis = await analyzeResumeWithGemini({
+    const jobMatch = await analyzeJobMatchWithGemini({
       resumeText: resume.extractedText,
       jobDescription,
       targetRole,
@@ -103,19 +103,20 @@ export async function POST(req: Request) {
         resumeId: resume.id,
         targetRole,
         jobDescription,
-        atsScore: analysis.atsScore,
-        skillsFound: analysis.skillsFound,
-        skillsMissing: analysis.skillsMissing,
-        strengths: analysis.strengths,
-        improvements: analysis.improvements,
-        keywords: analysis.keywords,
-        rawAnalysis: JSON.stringify(analysis)
+        atsScore: jobMatch.matchScore,
+        skillsFound: jobMatch.matchingSkills,
+        skillsMissing: jobMatch.missingRequiredSkills,
+        strengths: jobMatch.matchingSkills,
+        improvements: jobMatch.tailoredImprovements,
+        keywords: jobMatch.truthfulKeywords,
+        rawAnalysis: JSON.stringify(jobMatch)
       }
     })
 
     return NextResponse.json(
       {
         success: true,
+        jobMatch,
         analysis: {
           id: savedRecord.id,
           resumeId: savedRecord.resumeId,
@@ -128,11 +129,11 @@ export async function POST(req: Request) {
           strengths: savedRecord.strengths,
           improvements: savedRecord.improvements,
           keywords: savedRecord.keywords,
-          summary: analysis.summary,
-          overallAssessment: analysis.summary,
-          recommendations: analysis.recommendations,
+          summary: jobMatch.summary,
+          overallAssessment: jobMatch.summary,
+          recommendations: jobMatch.tailoredImprovements,
           createdAt: savedRecord.createdAt,
-          disclaimer: "ATS compatibility score is an AI-generated estimate and does not guarantee job placement or interviews."
+          disclaimer: "Match score is an AI-generated qualification estimate and does not guarantee employer hiring decisions."
         }
       },
       { status: 200 }

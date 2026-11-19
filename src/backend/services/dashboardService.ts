@@ -23,6 +23,31 @@ export interface DashboardData {
   suggestions: string[]
   targetRole: string | null
   matchedJobs: MatchedJobItem[]
+  recentAnalysis?: {
+    id: number
+    atsScore: number
+    targetRole: string | null
+    skillsFound: string[]
+    skillsMissing: string[]
+    improvements: string[]
+    strengths: string[]
+    createdAt: Date
+    resumeFileName?: string
+  } | null
+  recentApplications?: Array<{
+    id: number
+    company: string
+    role: string
+    status: string
+    appliedDate: Date
+  }>
+  applicationStats?: {
+    applied: number
+    interview: number
+    offer: number
+    saved: number
+    total: number
+  }
 }
 
 /**
@@ -36,10 +61,23 @@ export async function getDashboardData(userId: number): Promise<DashboardData> {
   }
 
   // 1. Fetch user records in parallel with strict user isolation
-  const [latestAnalysis, appliedCount, savedCount, resumes] = await Promise.all([
+  const [
+    latestAnalysis,
+    appliedCount,
+    savedCount,
+    interviewCount,
+    offerCount,
+    recentApplications,
+    resumes
+  ] = await Promise.all([
     prisma.resumeAnalysis.findFirst({
       where: { userId },
-      orderBy: { createdAt: "desc" }
+      orderBy: { createdAt: "desc" },
+      include: {
+        resume: {
+          select: { fileName: true }
+        }
+      }
     }),
     prisma.jobApplication.count({
       where: {
@@ -51,6 +89,30 @@ export async function getDashboardData(userId: number): Promise<DashboardData> {
       where: {
         userId,
         status: { in: ["INTERESTED", "SAVED"] }
+      }
+    }),
+    prisma.jobApplication.count({
+      where: {
+        userId,
+        status: "INTERVIEW"
+      }
+    }),
+    prisma.jobApplication.count({
+      where: {
+        userId,
+        status: "OFFER"
+      }
+    }),
+    prisma.jobApplication.findMany({
+      where: { userId },
+      orderBy: { updatedAt: "desc" },
+      take: 4,
+      select: {
+        id: true,
+        company: true,
+        role: true,
+        status: true,
+        appliedDate: true
       }
     }),
     prisma.resume.findMany({
@@ -184,6 +246,33 @@ export async function getDashboardData(userId: number): Promise<DashboardData> {
     applicationsSubtitle,
     suggestions,
     targetRole: latestAnalysis?.targetRole ?? null,
-    matchedJobs: matchedJobs.slice(0, 4)
+    matchedJobs: matchedJobs.slice(0, 4),
+    recentAnalysis: latestAnalysis
+      ? {
+          id: latestAnalysis.id,
+          atsScore: latestAnalysis.atsScore,
+          targetRole: latestAnalysis.targetRole,
+          skillsFound: latestAnalysis.skillsFound,
+          skillsMissing: latestAnalysis.skillsMissing,
+          improvements: latestAnalysis.improvements,
+          strengths: latestAnalysis.strengths,
+          createdAt: latestAnalysis.createdAt,
+          resumeFileName: latestAnalysis.resume?.fileName
+        }
+      : null,
+    recentApplications: recentApplications.map((app) => ({
+      id: app.id,
+      company: app.company,
+      role: app.role,
+      status: app.status,
+      appliedDate: app.appliedDate
+    })),
+    applicationStats: {
+      applied: appliedCount,
+      interview: interviewCount,
+      offer: offerCount,
+      saved: savedCount,
+      total: appliedCount + savedCount
+    }
   }
 }

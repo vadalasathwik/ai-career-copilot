@@ -1,31 +1,13 @@
-import Link from "next/link"
+import { redirect } from "next/navigation"
+import { getCurrentUser } from "@/backend/auth/session"
+import WorkspaceView from "@/components/WorkspaceView"
 
-export default function HomePage() {
-  return (
-    <main className="min-h-screen bg-black text-white flex flex-col items-center justify-center gap-6">
+export default async function HomePage() {
+  const user = await getCurrentUser()
 
-      <h1 className="text-5xl font-bold">
-        AI Career Copilot
-      </h1>
+  if (!user) {
+    redirect("/auth")
+  }
 
-      <p className="text-neutral-400 text-lg">
-        Your AI-Powered Career Growth Platform
-      </p>
-
-      <Link
-        href="/auth"
-        className="
-          bg-white
-          text-black
-          px-6
-          py-3
-          rounded-lg
-          font-semibold
-        "
-      >
-        Login / Signup
-      </Link>
-
-    </main>
-  )
+  return <WorkspaceView user={user} />
 }

@@ -26,6 +26,11 @@ export interface SafeResumeMetadata {
   createdAt: Date
   updatedAt: Date
   textSnippet?: string
+  latestAnalysis?: {
+    id: number
+    atsScore: number
+    targetRole: string | null
+  } | null
 }
 
 /**
@@ -264,11 +269,29 @@ export async function getUserResumes(userId: number): Promise<SafeResumeMetadata
       fileType: true,
       skills: true,
       createdAt: true,
-      updatedAt: true
+      updatedAt: true,
+      analyses: {
+        select: {
+          id: true,
+          atsScore: true,
+          targetRole: true
+        },
+        orderBy: { createdAt: "desc" },
+        take: 1
+      }
     }
   })
 
-  return resumes
+  return resumes.map((r) => ({
+    id: r.id,
+    fileName: r.fileName,
+    fileSize: r.fileSize,
+    fileType: r.fileType,
+    skills: r.skills,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+    latestAnalysis: r.analyses.length > 0 ? r.analyses[0] : null
+  }))
 }
 
 /**
