@@ -10,6 +10,7 @@ async function runInterviewPrepTests() {
   let otherUser
   let evidenceResume
   let emptyResume
+  let mismatchResume
 
   try {
     owner = await prisma.user.create({ data: { name: "Interview Owner", email: `interview_owner_${suffix}@example.com`, provider: "local" } })
@@ -19,12 +20,15 @@ async function runInterviewPrepTests() {
     evidenceResume = await prisma.resume.create({
       data: {
         userId: owner.id, fileName: "evidence.pdf", fileSize: 1, fileType: "application/pdf", filePath: "/tmp/evidence.pdf",
-        extractedText: "Built TypeScript services and React dashboards for customer analytics. Led Docker deployment automation. Operated Kubernetes clusters for production workloads. Maintained JavaScript user interfaces.",
-        skills: ["TypeScript", "React", "Docker", "Kubernetes", "JavaScript"]
+        extractedText: "Built TypeScript services and React dashboards for customer analytics. Led Docker deployment automation. Operated Kubernetes clusters for production workloads. Designed PostgreSQL schemas for reporting. Maintained JavaScript user interfaces.",
+        skills: ["TypeScript", "React", "Docker", "Kubernetes", "PostgreSQL", "JavaScript"]
       }
     })
     emptyResume = await prisma.resume.create({
       data: { userId: owner.id, fileName: "empty.pdf", fileSize: 1, fileType: "application/pdf", filePath: "/tmp/empty.pdf", extractedText: "", skills: [] }
+    })
+    mismatchResume = await prisma.resume.create({
+      data: { userId: owner.id, fileName: "mismatch.pdf", fileSize: 1, fileType: "application/pdf", filePath: "/tmp/mismatch.pdf", extractedText: "Maintained MySQL data stores. Coordinated generic orchestration work across teams.", skills: ["MySQL"] }
     })
 
     const description = "Required: TypeScript and React experience. Must have TypeScript, React, and Kubernetes production experience."
@@ -41,6 +45,8 @@ async function runInterviewPrepTests() {
     assert.equal(matched.status, 200)
     const data = await matched.json()
     assert.equal(data.success, true)
+    assert.equal(data.retrieval.vectorAvailable, false, "Development fallback must be used when pgvector is unavailable")
+    assert.equal(data.retrieval.vectorFallbackReason, "PGVECTOR_UNAVAILABLE")
     assert.ok(data.questions.length <= 5)
     const evidence = data.questions.find((question) => question.evidenceStatus === "evidence")
     const gap = data.questions.find((question) => question.evidenceStatus === "gap" && question.jobRequirement.includes("Kubernetes"))
@@ -69,10 +75,33 @@ async function runInterviewPrepTests() {
     assert.equal(semanticData.questions[0].evidenceMethod, "semantic", "Kubernetes must support the container-orchestration paraphrase")
     assert.equal(semanticData.questions[0].resumeExcerpt, "Operated Kubernetes clusters for production workloads.")
     assert.equal(semanticData.retrieval.keywordFallbackUsed, false)
+
+    const alias = await fetch(`${BASE_URL}/api/interview-prep`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: `token=${ownerToken}` }, body: JSON.stringify({ resumeId: evidenceResume.id, jobDescription: "Required: K8s experience for your role." }) })
+    const aliasData = await alias.json()
+    assert.equal(alias.status, 200)
+    assert.equal(aliasData.questions[0].evidenceMethod, "semantic", "K8s and Kubernetes must remain explicit aliases")
+    assert.equal(aliasData.questions[0].resumeExcerpt, "Operated Kubernetes clusters for production workloads.")
+
+    const relational = await fetch(`${BASE_URL}/api/interview-prep`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: `token=${ownerToken}` }, body: JSON.stringify({ resumeId: evidenceResume.id, jobDescription: "Required: relational database experience for your role." }) })
+    const relationalData = await relational.json()
+    assert.equal(relational.status, 200)
+    assert.equal(relationalData.questions[0].evidenceMethod, "semantic", "PostgreSQL must support the broader relational-database requirement")
+    assert.equal(relationalData.questions[0].resumeExcerpt, "Designed PostgreSQL schemas for reporting.")
+
+    const postgresOnly = await fetch(`${BASE_URL}/api/interview-prep`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: `token=${ownerToken}` }, body: JSON.stringify({ resumeId: mismatchResume.id, jobDescription: "Required: PostgreSQL experience for your role." }) })
+    const postgresOnlyData = await postgresOnly.json()
+    assert.equal(postgresOnly.status, 200)
+    assert.equal(postgresOnlyData.questions[0].evidenceStatus, "gap", "MySQL must not satisfy a PostgreSQL requirement")
+
+    const kubernetesOnly = await fetch(`${BASE_URL}/api/interview-prep`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: `token=${ownerToken}` }, body: JSON.stringify({ resumeId: mismatchResume.id, jobDescription: "Required: Kubernetes experience for your role." }) })
+    const kubernetesOnlyData = await kubernetesOnly.json()
+    assert.equal(kubernetesOnly.status, 200)
+    assert.equal(kubernetesOnlyData.questions[0].evidenceStatus, "gap", "Generic orchestration must not satisfy a Kubernetes requirement")
     console.log("✓ Interview prep: evidence, partial/gap, missing text, and unauthorized access passed.")
   } finally {
     if (evidenceResume) await prisma.resume.delete({ where: { id: evidenceResume.id } })
     if (emptyResume) await prisma.resume.delete({ where: { id: emptyResume.id } })
+    if (mismatchResume) await prisma.resume.delete({ where: { id: mismatchResume.id } })
     if (owner) await prisma.user.delete({ where: { id: owner.id } })
     if (otherUser) await prisma.user.delete({ where: { id: otherUser.id } })
   }
