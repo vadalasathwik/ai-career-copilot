@@ -54,6 +54,12 @@ async function runInterviewPrepTests() {
     const javaData = await javaOnly.json()
     assert.equal(javaData.questions[0].evidenceStatus, "gap", "JavaScript must not count as evidence for Java")
     assert.equal(javaData.questions[0].resumeExcerpt, null)
+
+    const dockerPunctuation = await fetch(`${BASE_URL}/api/interview-prep`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: `token=${ownerToken}` }, body: JSON.stringify({ resumeId: evidenceResume.id, jobDescription: "Required: Docker. Please prepare for your role." }) })
+    assert.equal(dockerPunctuation.status, 200)
+    const dockerData = await dockerPunctuation.json()
+    assert.equal(dockerData.questions[0].evidenceStatus, "evidence", "Terminal punctuation must not prevent Docker evidence retrieval")
+    assert.equal(dockerData.questions[0].resumeExcerpt, "Led Docker deployment automation.")
     console.log("✓ Interview prep: evidence, partial/gap, missing text, and unauthorized access passed.")
   } finally {
     if (evidenceResume) await prisma.resume.delete({ where: { id: evidenceResume.id } })

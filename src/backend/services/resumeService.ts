@@ -8,6 +8,14 @@ import { prisma } from "@/backend/db/prisma"
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5 MB
 const STORAGE_DIR = path.join(process.cwd(), "storage", "resumes")
 
+/** Errors caused by the uploaded document that callers may safely report as 400. */
+export class ResumeInputError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "ResumeInputError"
+  }
+}
+
 // Curated dictionary of technical skills for initial skill tagging
 const COMMON_SKILLS = [
   "JavaScript", "TypeScript", "Python", "Java", "C++", "C#", "Go", "Rust", "PHP", "Ruby", "Swift", "Kotlin",
@@ -60,16 +68,16 @@ function escapeRegex(str: string): string {
  */
 export function validateFileBuffer(buffer: Buffer, originalName: string): { ext: string; mimeType: string } {
   if (!buffer || buffer.length === 0) {
-    throw new Error("The uploaded file is empty.")
+    throw new ResumeInputError("The uploaded file is empty.")
   }
 
   if (buffer.length > MAX_FILE_SIZE) {
-    throw new Error("File exceeds the maximum allowed size of 5 MB.")
+    throw new ResumeInputError("File exceeds the maximum allowed size of 5 MB.")
   }
 
   const ext = path.extname(originalName).toLowerCase()
   if (ext !== ".pdf" && ext !== ".docx") {
-    throw new Error("Unsupported file type. Only PDF and DOCX files are accepted.")
+    throw new ResumeInputError("Unsupported file type. Only PDF and DOCX files are accepted.")
   }
 
   // Magic bytes validation
@@ -83,7 +91,7 @@ export function validateFileBuffer(buffer: Buffer, originalName: string): { ext:
       buffer[3] === 0x46
 
     if (!isPdf) {
-      throw new Error("Invalid file content: The file header does not match a valid PDF document.")
+      throw new ResumeInputError("Invalid file content: The file header does not match a valid PDF document.")
     }
 
     return { ext: ".pdf", mimeType: "application/pdf" }
@@ -97,7 +105,7 @@ export function validateFileBuffer(buffer: Buffer, originalName: string): { ext:
       buffer[3] === 0x04
 
     if (!isZip) {
-      throw new Error("Invalid file content: The file header does not match a valid DOCX document.")
+      throw new ResumeInputError("Invalid file content: The file header does not match a valid DOCX document.")
     }
 
     return {
@@ -143,7 +151,7 @@ export async function extractText(buffer: Buffer, ext: string): Promise<string> 
 
       const text = res.text?.trim() ?? ""
       if (!text || text.length === 0) {
-        throw new Error(
+        throw new ResumeInputError(
           "No readable text could be extracted from this PDF. Please ensure it is not password-protected or an image-only scan."
         )
       }
@@ -152,15 +160,14 @@ export async function extractText(buffer: Buffer, ext: string): Promise<string> 
       if (err instanceof Error && err.message.includes("No readable text")) {
         throw err
       }
-      const rawMsg = err instanceof Error ? err.message : String(err)
-      throw new Error(`Failed to parse PDF document. Details: ${rawMsg}`)
+      throw new ResumeInputError("Failed to parse the PDF document. Please upload a valid, text-based PDF.")
     }
   } else {
     try {
       const result = await mammoth.extractRawText({ buffer })
       const text = result.value?.trim() ?? ""
       if (!text || text.length === 0) {
-        throw new Error(
+        throw new ResumeInputError(
           "No readable text could be extracted from this DOCX file. Please ensure the document contains readable text."
         )
       }
@@ -169,7 +176,7 @@ export async function extractText(buffer: Buffer, ext: string): Promise<string> 
       if (err instanceof Error && err.message.includes("No readable text")) {
         throw err
       }
-      throw new Error("Failed to parse DOCX document. The file may be corrupt or invalid.")
+      throw new ResumeInputError("Failed to parse the DOCX document. The file may be corrupt or invalid.")
     }
   }
 }

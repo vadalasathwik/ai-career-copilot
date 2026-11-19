@@ -30,7 +30,12 @@ function splitResumeSentences(text: string): string[] {
 
 function keywordTokens(value: string): string[] {
   return Array.from(new Set(
-    value.normalize("NFKC").toLowerCase().match(/[a-z][a-z0-9+#.-]{1,}/g)?.filter((word) => !STOP_WORDS.has(word)) ?? []
+    value
+      .normalize("NFKC")
+      .toLowerCase()
+      .match(/[a-z][a-z0-9+#.-]{1,}/g)
+      ?.map((word) => word.replace(/^[.-]+|[.-]+$/g, ""))
+      .filter((word) => word.length > 0 && !STOP_WORDS.has(word)) ?? []
   ))
 }
 

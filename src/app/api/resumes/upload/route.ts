@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { authenticateApiUser } from "@/backend/auth/session"
-import { processAndSaveResume } from "@/backend/services/resumeService"
+import { processAndSaveResume, ResumeInputError } from "@/backend/services/resumeService"
 
 export async function POST(request: NextRequest) {
   const auth = await authenticateApiUser()
@@ -11,7 +11,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const formData = await request.formData()
-    const file = formData.get("file")
+    // The workspace submits `resume`; keep `file` for existing API clients/tests.
+    const file = formData.get("resume") ?? formData.get("file")
 
     if (!file || !(file instanceof File)) {
       return NextResponse.json(
@@ -52,12 +53,24 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error) {
+    if (error instanceof ResumeInputError) {
+      return NextResponse.json(
+        { success: false, message: error.message },
+        { status: 400 }
+      )
+    }
+
+    // Do not expose storage/database details or document contents to the client.
+    console.error("[resume-upload] Unexpected processing failure", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+      errorMessage: error instanceof Error ? error.message : "Unknown error"
+    })
     return NextResponse.json(
       {
         success: false,
-        message: error instanceof Error ? error.message : "Failed to process resume upload."
+        message: "We could not save your resume right now. Please try again."
       },
-      { status: 400 }
+      { status: 500 }
     )
   }
 }
