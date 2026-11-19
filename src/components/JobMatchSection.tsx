@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import type { JobMatchAnalysisReport } from "@/backend/services/aiService"
 import LearningPlanSection from "./LearningPlanSection"
 
@@ -11,6 +11,13 @@ interface ResumeSummary {
 
 interface JobMatchSectionProps {
   currentResume: ResumeSummary | null
+}
+
+interface InterviewPracticeQuestion {
+  question: string
+  jobRequirement: string
+  resumeExcerpt: string | null
+  evidenceStatus: "evidence" | "gap"
 }
 
 export default function JobMatchSection({ currentResume }: JobMatchSectionProps) {
@@ -26,6 +33,28 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
   const [matching, setMatching] = useState(false)
   const [matchError, setMatchError] = useState<string | null>(null)
   const [matchResult, setMatchResult] = useState<JobMatchAnalysisReport | null>(null)
+  const [practiceQuestions, setPracticeQuestions] = useState<InterviewPracticeQuestion[] | null>(null)
+  const [practiceLoading, setPracticeLoading] = useState(false)
+  const [practiceError, setPracticeError] = useState<string | null>(null)
+  const practiceRequest = useRef(0)
+  const practiceController = useRef<AbortController | null>(null)
+  const activeResumeId = useRef<number | null>(currentResume?.id ?? null)
+  const activeJobDescription = useRef(jobDescription)
+  const [matchResumeId, setMatchResumeId] = useState<number | null>(null)
+  const hasCurrentMatch = Boolean(matchResult && matchResumeId === currentResume?.id)
+
+  useEffect(() => {
+    activeResumeId.current = currentResume?.id ?? null
+    activeJobDescription.current = jobDescription
+  }, [currentResume?.id, jobDescription])
+
+  // A new active resume makes prior match and evidence results inapplicable.
+  useEffect(() => {
+    practiceRequest.current += 1
+    practiceController.current?.abort()
+  }, [currentResume?.id])
+
+  useEffect(() => () => practiceController.current?.abort(), [])
 
   // Handle URL Fetching via server endpoint
   async function handleFetchUrl(e: React.FormEvent) {
@@ -111,6 +140,9 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
       }
 
       setMatchResult(data.jobMatch || data.analysis)
+      setMatchResumeId(currentResume.id)
+      setPracticeQuestions(null)
+      setPracticeError(null)
     } catch (err: unknown) {
       setMatchError(err instanceof Error ? err.message : "Job match analysis failed.")
     } finally {
@@ -119,12 +151,51 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
   }
 
   function handleResetJob() {
+    practiceRequest.current += 1
+    practiceController.current?.abort()
     setMatchResult(null)
+    setMatchResumeId(null)
+    setPracticeQuestions(null)
+    setPracticeError(null)
     setJobDescription("")
     setTargetRole("")
     setJobCompany("")
     setJobUrl("")
     setUrlMessage(null)
+  }
+
+  async function handleGeneratePracticeQuestions() {
+    if (!currentResume || !hasCurrentMatch) return
+
+    const requestId = ++practiceRequest.current
+    const resumeId = currentResume.id
+    const descriptionAtRequest = jobDescription.trim()
+    practiceController.current?.abort()
+    const controller = new AbortController()
+    practiceController.current = controller
+    setPracticeLoading(true)
+    setPracticeError(null)
+
+    try {
+      const res = await fetch("/api/interview-prep", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({ resumeId, jobDescription: descriptionAtRequest })
+      })
+      const data = await res.json()
+      // Ignore a response for an older resume/job or superseded request.
+      if (requestId !== practiceRequest.current || activeResumeId.current !== resumeId || activeJobDescription.current.trim() !== descriptionAtRequest) return
+      if (!res.ok || !data.success) throw new Error(data.message || "Could not generate practice questions.")
+      setPracticeQuestions(Array.isArray(data.questions) ? data.questions : [])
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === "AbortError") return
+      if (requestId === practiceRequest.current) {
+        setPracticeError(err instanceof Error ? err.message : "Could not generate practice questions.")
+      }
+    } finally {
+      if (requestId === practiceRequest.current) setPracticeLoading(false)
+    }
   }
 
   function getScoreBadgeColor(score: number) {
@@ -147,7 +218,7 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
           </p>
         </div>
 
-        {matchResult && (
+        {hasCurrentMatch && (
           <button
             type="button"
             onClick={handleResetJob}
@@ -159,7 +230,7 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
       </div>
 
       {/* Input Selector Tabs: Paste vs URL */}
-      {!matchResult && (
+      {!hasCurrentMatch && (
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-2 p-1 bg-neutral-950 rounded-xl border border-neutral-800 w-fit">
             <button
@@ -348,7 +419,7 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
       )}
 
       {/* Match Results Display */}
-      {matchResult && (
+      {hasCurrentMatch && matchResult && (
         <div className="flex flex-col gap-5 animate-in fade-in duration-200">
           {/* Top Score Banner */}
           <div className="bg-neutral-950 p-5 rounded-2xl border border-neutral-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -449,6 +520,50 @@ export default function JobMatchSection({ currentResume }: JobMatchSectionProps)
           </div>
 
           <LearningPlanSection missingSkills={matchResult.missingRequiredSkills || []} />
+
+          {/* Resume-grounded interview practice */}
+          <section className="bg-neutral-950/70 p-4 rounded-xl border border-neutral-800 flex flex-col gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-bold text-white">Interview Prep with Resume Evidence</h4>
+                <p className="text-[11px] text-neutral-400 mt-1">Questions are retrieved from this job description and only cite verbatim resume text.</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleGeneratePracticeQuestions}
+                disabled={practiceLoading}
+                className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl transition disabled:opacity-50 shrink-0"
+              >
+                {practiceLoading ? "Generating..." : practiceQuestions ? "Generate again" : "Generate practice questions"}
+              </button>
+            </div>
+
+            {practiceError && (
+              <div className="bg-rose-950/80 border border-rose-800 text-rose-300 text-xs p-3 rounded-xl flex items-center justify-between gap-3">
+                <span>⚠️ {practiceError}</span>
+                <button type="button" onClick={handleGeneratePracticeQuestions} className="underline font-semibold">Retry</button>
+              </div>
+            )}
+
+            {practiceQuestions && (
+              <ol className="flex flex-col gap-3">
+                {practiceQuestions.map((item, index) => (
+                  <li key={`${item.jobRequirement}-${index}`} className="border border-neutral-800 rounded-xl p-3.5 text-xs">
+                    <p className="font-semibold text-white leading-relaxed">{index + 1}. {item.question}</p>
+                    <p className="text-neutral-400 mt-2"><span className="font-semibold text-neutral-300">Job requirement:</span> {item.jobRequirement}</p>
+                    {item.evidenceStatus === "evidence" && item.resumeExcerpt ? (
+                      <blockquote className="mt-2 border-l-2 border-emerald-600 pl-2.5 text-emerald-200 leading-relaxed">
+                        <span className="font-semibold">Resume evidence:</span> “{item.resumeExcerpt}”
+                      </blockquote>
+                    ) : (
+                      <p className="mt-2 text-amber-300 font-semibold">Practice gap</p>
+                    )}
+                  </li>
+                ))}
+                {practiceQuestions.length === 0 && <li className="text-xs text-neutral-400">No clear requirements were found. Add more detail to the job description and try again.</li>}
+              </ol>
+            )}
+          </section>
 
           {/* Partially Matching Skills */}
           {matchResult.partiallyMatchingSkills && matchResult.partiallyMatchingSkills.length > 0 && (
