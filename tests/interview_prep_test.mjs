@@ -19,8 +19,8 @@ async function runInterviewPrepTests() {
     evidenceResume = await prisma.resume.create({
       data: {
         userId: owner.id, fileName: "evidence.pdf", fileSize: 1, fileType: "application/pdf", filePath: "/tmp/evidence.pdf",
-        extractedText: "Built TypeScript services and React dashboards for customer analytics. Led Docker deployment automation.",
-        skills: ["TypeScript", "React", "Docker"]
+        extractedText: "Built TypeScript services and React dashboards for customer analytics. Led Docker deployment automation. Maintained JavaScript user interfaces.",
+        skills: ["TypeScript", "React", "Docker", "JavaScript"]
       }
     })
     emptyResume = await prisma.resume.create({
@@ -48,6 +48,12 @@ async function runInterviewPrepTests() {
     assert.equal(evidence.resumeExcerpt, "Built TypeScript services and React dashboards for customer analytics.")
     assert.ok(gap, "Expected a partially matched requirement to be a practice gap")
     assert.equal(gap.resumeExcerpt, null)
+
+    const javaOnly = await fetch(`${BASE_URL}/api/interview-prep`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: `token=${ownerToken}` }, body: JSON.stringify({ resumeId: evidenceResume.id, jobDescription: "Required Java experience for your role." }) })
+    assert.equal(javaOnly.status, 200)
+    const javaData = await javaOnly.json()
+    assert.equal(javaData.questions[0].evidenceStatus, "gap", "JavaScript must not count as evidence for Java")
+    assert.equal(javaData.questions[0].resumeExcerpt, null)
     console.log("✓ Interview prep: evidence, partial/gap, missing text, and unauthorized access passed.")
   } finally {
     if (evidenceResume) await prisma.resume.delete({ where: { id: evidenceResume.id } })

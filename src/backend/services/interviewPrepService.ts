@@ -30,7 +30,7 @@ function splitResumeSentences(text: string): string[] {
 
 function keywordTokens(value: string): string[] {
   return Array.from(new Set(
-    value.toLowerCase().match(/[a-z][a-z0-9+#.-]{1,}/g)?.filter((word) => !STOP_WORDS.has(word)) ?? []
+    value.normalize("NFKC").toLowerCase().match(/[a-z][a-z0-9+#.-]{1,}/g)?.filter((word) => !STOP_WORDS.has(word)) ?? []
   ))
 }
 
@@ -54,8 +54,8 @@ function findEvidence(requirement: string, resumeSentences: string[]): string | 
 
   let best: { sentence: string; score: number } | null = null
   for (const sentence of resumeSentences) {
-    const normalized = sentence.toLowerCase()
-    const matched = terms.filter((term) => normalized.includes(term)).length
+    const resumeTokens = new Set(keywordTokens(sentence))
+    const matched = terms.filter((term) => resumeTokens.has(term)).length
     // A partial keyword overlap is not sufficient evidence for the entire
     // requirement. Mark it as a practice gap instead of implying experience.
     const threshold = terms.length
