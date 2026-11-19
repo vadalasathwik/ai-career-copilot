@@ -3,9 +3,13 @@ export interface InterviewPracticeQuestion {
   jobRequirement: string
   resumeExcerpt: string | null
   evidenceStatus: "evidence" | "gap"
-  evidenceMethod: "semantic" | "keyword" | "none"
+  evidenceMethod: "vector" | "semantic" | "keyword" | "none"
   gapExplanation?: string
 }
+
+// Vector similarity ranks the three candidates; directional evidence validation
+// is the conservative citation gate, so no additional similarity cutoff is used.
+export const VECTOR_EVIDENCE_MIN_SIMILARITY = 0
 
 const STOP_WORDS = new Set([
   "about", "after", "also", "and", "are", "been", "being", "candidate", "collaborate", "company", "develop", "experience", "for", "from", "have", "ideal", "into", "join", "looking", "must", "our", "required", "requirements", "role", "that", "the", "their", "this", "through", "using", "will", "with", "work", "years", "your"
@@ -55,40 +59,47 @@ function extractRequirements(jobDescription: string): string[] {
   }).slice(0, 5)
 }
 
-// Small, explicit equivalence sets let us retrieve common role-language
-// paraphrases without inventing candidate experience or relying on a model.
-const SEMANTIC_CONCEPTS = [
-  { concept: "container_orchestration", phrases: ["container orchestration", "kubernetes", "k8s"] },
-  { concept: "deployment_automation", phrases: ["deployment automation", "automated deployment", "ci/cd", "continuous integration", "continuous delivery"] },
-  { concept: "relational_data", phrases: ["relational database", "postgresql", "mysql", "sql database"] }
+// Directional synonym rules: a named product can prove a broader capability,
+// but a broad concept or sibling product can never prove a named requirement.
+const SYNONYM_RULES = [
+  { genericPhrases: ["container orchestration"], aliasGroups: [["kubernetes", "k8s"]] },
+  { genericPhrases: ["relational database", "sql database"], aliasGroups: [["postgresql"], ["mysql"]] },
+  { genericPhrases: ["deployment automation", "automated deployment"], aliasGroups: [["ci/cd"]] }
 ]
 
-function semanticConcepts(text: string): Set<string> {
-  const normalized = text.normalize("NFKC").toLowerCase()
-  return new Set(
-    SEMANTIC_CONCEPTS
-      .filter(({ phrases }) => phrases.some((phrase) => normalized.includes(phrase)))
-      .map(({ concept }) => concept)
-  )
+function hasPhrase(tokens: Set<string>, phrase: string): boolean {
+  return keywordTokens(phrase).every((token) => tokens.has(token))
 }
 
 function findSemanticEvidence(requirement: string, resumeSentences: string[]): string | null {
-  const requiredConcepts = semanticConcepts(requirement)
-  if (requiredConcepts.size === 0) return null
+  const requirementTokens = new Set(keywordTokens(requirement))
+  const allowedAliasGroups: string[][] = []
+  const consumedTerms = new Set<string>()
 
-  const semanticTerms = new Set(
-    SEMANTIC_CONCEPTS
-      .filter(({ concept }) => requiredConcepts.has(concept))
-      .flatMap(({ phrases }) => phrases.flatMap(keywordTokens))
-  )
-  const remainingTerms = keywordTokens(requirement).filter((term) => !semanticTerms.has(term))
+  for (const rule of SYNONYM_RULES) {
+    const genericRequirement = rule.genericPhrases.some((phrase) => hasPhrase(requirementTokens, phrase))
+    if (genericRequirement) {
+      allowedAliasGroups.push(rule.aliasGroups.flat())
+      rule.genericPhrases.forEach((phrase) => keywordTokens(phrase).forEach((term) => consumedTerms.add(term)))
+    }
+
+    for (const aliases of rule.aliasGroups) {
+      if (aliases.some((alias) => hasPhrase(requirementTokens, alias))) {
+        // Only the requirement's own aliases are eligible; sibling products are not.
+        allowedAliasGroups.push(aliases)
+        aliases.forEach((alias) => keywordTokens(alias).forEach((term) => consumedTerms.add(term)))
+      }
+    }
+  }
+
+  if (allowedAliasGroups.length === 0) return null
+  const remainingTerms = keywordTokens(requirement).filter((term) => !consumedTerms.has(term))
 
   return resumeSentences.find((sentence) => {
-    const sentenceConcepts = semanticConcepts(sentence)
-    const sentenceTerms = new Set(keywordTokens(sentence))
+    const sentenceTokens = new Set(keywordTokens(sentence))
     return (
-      Array.from(requiredConcepts).every((concept) => sentenceConcepts.has(concept)) &&
-      remainingTerms.every((term) => sentenceTerms.has(term))
+      allowedAliasGroups.every((aliases) => aliases.some((alias) => hasPhrase(sentenceTokens, alias))) &&
+      remainingTerms.every((term) => sentenceTokens.has(term))
     )
   }) ?? null
 }
@@ -109,6 +120,35 @@ function findEvidence(requirement: string, resumeSentences: string[]): string | 
     }
   }
   return best?.sentence ?? null
+}
+
+export function ruleBasedCandidates(requirement: string, excerpts: string[]): { keyword: string[]; synonym: string[] } {
+  return {
+    keyword: excerpts.filter((excerpt) => Boolean(findEvidence(requirement, [excerpt]))).slice(0, 3),
+    synonym: excerpts.filter((excerpt) => Boolean(findSemanticEvidence(requirement, [excerpt]))).slice(0, 3)
+  }
+}
+
+/** Applies the same directional proof rule to a vector-ranked candidate. */
+export function evidenceRuleMatches(requirement: string, excerpt: string): boolean {
+  return Boolean(findSemanticEvidence(requirement, [excerpt]) ?? findEvidence(requirement, [excerpt]))
+}
+
+export function applyVectorEvidence(
+  question: InterviewPracticeQuestion,
+  candidates: Array<{ text: string; similarity: number }>
+): InterviewPracticeQuestion {
+  // Similarity ranks candidates only. Quotes are shown only after the same
+  // exact/directional proof rule used by keyword and synonym retrieval.
+  const candidate = candidates.find((item) => item.similarity >= VECTOR_EVIDENCE_MIN_SIMILARITY && evidenceRuleMatches(question.jobRequirement, item.text))
+  if (!candidate) return question
+  return {
+    ...question,
+    resumeExcerpt: candidate.text,
+    evidenceStatus: "evidence",
+    evidenceMethod: "vector",
+    gapExplanation: undefined
+  }
 }
 
 function questionFor(requirement: string, hasEvidence: boolean): string {

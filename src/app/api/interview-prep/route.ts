@@ -2,7 +2,8 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 import { authenticateApiUser } from "@/backend/auth/session"
 import { prisma } from "@/backend/db/prisma"
-import { createInterviewPracticeQuestions } from "@/backend/services/interviewPrepService"
+import { applyVectorEvidence, createInterviewPracticeQuestions } from "@/backend/services/interviewPrepService"
+import { ensureResumeEvidenceIndex, retrieveResumeEvidenceCandidates } from "@/backend/services/resumeEvidenceService"
 
 const requestSchema = z.object({
   resumeId: z.coerce.number().int().positive(),
@@ -36,10 +37,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, message: "The selected resume contains no readable extracted text. Please upload a readable resume." }, { status: 400 })
   }
 
-  const questions = createInterviewPracticeQuestions(parsed.data.jobDescription, resume.extractedText).slice(0, 5)
+  const baselineQuestions = createInterviewPracticeQuestions(parsed.data.jobDescription, resume.extractedText).slice(0, 5)
+  const index = await ensureResumeEvidenceIndex(resume.id, resume.extractedText)
+  const vectorResults = index.available
+    ? await Promise.all(baselineQuestions.map((question) => retrieveResumeEvidenceCandidates(resume.id, question.jobRequirement)))
+    : []
+  const questions = baselineQuestions.map((question, index) =>
+    vectorResults[index]?.available
+      ? applyVectorEvidence(question, vectorResults[index].candidates)
+      : question
+  )
   return NextResponse.json({
     success: true,
     questions,
-    retrieval: { keywordFallbackUsed: questions.some((question) => question.evidenceMethod === "keyword") }
+    retrieval: {
+      vectorAvailable: index.available,
+      vectorFallbackReason: index.available ? undefined : index.reason,
+      keywordFallbackUsed: questions.some((question) => question.evidenceMethod === "keyword")
+    }
   })
 }

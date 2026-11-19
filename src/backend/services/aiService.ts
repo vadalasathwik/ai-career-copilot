@@ -240,6 +240,18 @@ function getGeminiClient(): GenAIClientLike {
   })
 }
 
+/** Reuses the same credentials and timeout policy for non-generative embeddings. */
+export function getGeminiEmbeddingClient(): GoogleGenAI {
+  const apiKey = process.env.GEMINI_API_KEY?.trim()
+  if (!apiKey) {
+    throw new MissingApiKeyError()
+  }
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: { timeout: DEFAULT_CALL_TIMEOUT_MS }
+  })
+}
+
 export function resolveGeminiModel(): string {
   const envModel = process.env.GEMINI_MODEL?.trim()
   if (!envModel) {

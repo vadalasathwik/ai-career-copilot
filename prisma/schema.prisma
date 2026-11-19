@@ -41,8 +41,24 @@ model Resume {
   updatedAt     DateTime         @updatedAt
   analyses      ResumeAnalysis[]
   matches       JobMatch[]
+  evidenceChunks ResumeEvidenceChunk[]
 
   @@index([userId])
+}
+
+model ResumeEvidenceChunk {
+  id               Int      @id @default(autoincrement())
+  resumeId         Int
+  resume           Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  chunkText        String   @db.Text
+  startOffset      Int
+  endOffset        Int
+  contentHash      String
+  embeddingModel   String
+  createdAt        DateTime @default(now())
+
+  @@unique([resumeId, startOffset, endOffset, embeddingModel])
+  @@index([resumeId, embeddingModel])
 }
 
 model ResumeAnalysis {

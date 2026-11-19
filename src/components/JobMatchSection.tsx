@@ -18,7 +18,7 @@ interface InterviewPracticeQuestion {
   jobRequirement: string
   resumeExcerpt: string | null
   evidenceStatus: "evidence" | "gap"
-  evidenceMethod: "semantic" | "keyword" | "none"
+  evidenceMethod: "vector" | "semantic" | "keyword" | "none"
   gapExplanation?: string
 }
 
@@ -89,7 +89,7 @@ function InterviewPrep({ resumeId, jobDescription }: { resumeId: number; jobDesc
               <p className="font-semibold text-white leading-relaxed pt-0.5">{item.question}</p>
             </div>
             <div className="mt-3 rounded-lg bg-neutral-900/70 px-3 py-2 text-neutral-300 leading-relaxed"><span className="font-semibold text-neutral-100">Job requirement:</span> {item.jobRequirement}</div>
-            {item.evidenceStatus === "evidence" && item.resumeExcerpt ? <blockquote className="mt-2 border-l-2 border-emerald-600 bg-emerald-950/20 pl-3 py-2 text-emerald-100 leading-relaxed"><span className="font-semibold">Resume evidence{item.evidenceMethod === "semantic" ? " · semantic match" : " · keyword match"}:</span> “{item.resumeExcerpt}”</blockquote> : <div className="mt-2 rounded-lg border border-amber-900/80 bg-amber-950/30 px-3 py-2 text-amber-200 leading-relaxed"><span className="font-semibold">Practice gap:</span> {item.gapExplanation || "No resume excerpt met the evidence rule for this requirement."}</div>}
+            {item.evidenceStatus === "evidence" && item.resumeExcerpt ? <blockquote className="mt-2 border-l-2 border-emerald-600 bg-emerald-950/20 pl-3 py-2 text-emerald-100 leading-relaxed"><span className="font-semibold">Resume evidence{item.evidenceMethod === "vector" ? " · vector match" : item.evidenceMethod === "semantic" ? " · synonym match" : " · keyword match"}:</span> “{item.resumeExcerpt}”</blockquote> : <div className="mt-2 rounded-lg border border-amber-900/80 bg-amber-950/30 px-3 py-2 text-amber-200 leading-relaxed"><span className="font-semibold">Practice gap:</span> {item.gapExplanation || "No resume excerpt met the evidence rule for this requirement."}</div>}
           </li>)}
           {questions.length === 0 && <li className="text-xs text-neutral-400">No clear requirements were found. Add more detail to the job description and try again.</li>}
         </ol>
